@@ -39,12 +39,12 @@ model Otp {
   expiresAt DateTime
   used      Boolean  @default(false)
 }
-
 model Restaurant {
   id        String     @id @default(uuid())
   name      String
   address   String
   phone     String?
+  imageUrl  String?    // optional restaurant cover image
   owner     User       @relation("RestaurantOwner", fields: [ownerId], references: [id])
   ownerId   String
   menuItems MenuItem[]
@@ -59,6 +59,7 @@ model MenuItem {
   description  String?
   price        Float
   available    Boolean    @default(true)
+  imageUrl     String?    // add this for menu item images
   restaurant   Restaurant @relation(fields: [restaurantId], references: [id])
   restaurantId String
   orderItems   OrderItem[]

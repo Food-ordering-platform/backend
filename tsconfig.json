@@ -15,7 +15,7 @@
     "esModuleInterop": true,        // ✅ allows import express from "express"
     "moduleResolution": "node10",   // ✅ correct pairing for commonjs
 
-     "ignoreDeprecations": "6.0",
+    //  "ignoreDeprecations": "6.0",
 
     /* Type safety */
     "strict": true,

@@ -39,6 +39,7 @@ model Otp {
   expiresAt DateTime
   used      Boolean  @default(false)
 }
+
 model Restaurant {
   id        String     @id @default(uuid())
   name      String
@@ -51,6 +52,10 @@ model Restaurant {
   orders    Order[]
   createdAt DateTime   @default(now())
   updatedAt DateTime   @updatedAt
+  deliveryTime String
+  deliveryFee  Float
+  minimumOrder Float
+  isOpen  Boolean
 }
 
 model MenuItem {

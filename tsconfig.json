@@ -1,23 +1,17 @@
 {
   "compilerOptions": {
-    /* File structure */
     "rootDir": "./src",
     "outDir": "./dist",
 
-    /* Environment */
-    "module": "commonjs",           // ✅ standard for Node backends
-    "target": "es2020",             // ✅ modern JS
+    "module": "commonjs",
+    "target": "es2020",
     "lib": ["es2020"],
     "types": ["node"],
 
-    /* Build options */
     "sourceMap": true,
-    "esModuleInterop": true,        // ✅ allows import express from "express"
-    "moduleResolution": "node10",   // ✅ correct pairing for commonjs
+    "esModuleInterop": true,
+    "moduleResolution": "bundler",
 
-    //  "ignoreDeprecations": "6.0",
-
-    /* Type safety */
     "strict": true,
     "skipLibCheck": true
   },

@@ -3,7 +3,17 @@ import { RestaurantController } from "./restaurant.controller";
 
 const router = Router();
 
+// Restaurant
 router.get("/", RestaurantController.getAllRestaurants);
-router.get("/:id", RestaurantController.getRestaurantById)
+router.get("/:id", RestaurantController.getRestaurantById);
+router.put("/:id", RestaurantController.updateRestaurant);
 
-export default router
+// Menu Management
+router.get("/:id/menu", RestaurantController.getMenuItems);
+router.post("/:id/menu", RestaurantController.addMenuItem);
+
+router.put("/menu/:id", RestaurantController.updateMenuItem);
+router.delete("/menu/:id", RestaurantController.deleteMenuItem);
+router.patch("/menu/:id/toggle", RestaurantController.toggleMenuItemAvailability);
+
+export default router;

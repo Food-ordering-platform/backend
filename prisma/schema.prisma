@@ -43,6 +43,7 @@ model Otp {
 model Restaurant {
   id        String     @id @default(uuid())
   name      String
+  email     String     @unique
   address   String
   phone     String?
   imageUrl  String?    // optional restaurant cover image

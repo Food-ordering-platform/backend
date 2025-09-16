@@ -7,10 +7,11 @@ const prisma = new PrismaClient();
 async function main() {
   console.log("Seeding database...");
 
-  // ---- Users ----
+  // ---- Password hash ----
   const password = await bcrypt.hash("password123", 10);
 
-  const user1 = await prisma.user.create({
+  // ---- Users ----
+  const vendor1 = await prisma.user.create({
     data: {
       name: "Alice Vendor",
       email: "alice@vendor.com",
@@ -21,13 +22,25 @@ async function main() {
     },
   });
 
-  const user2 = await prisma.user.create({
+  const vendor2 = await prisma.user.create({
     data: {
       name: "Bob Vendor",
       email: "bob@vendor.com",
       password,
       phone: "08087654321",
       role: "VENDOR",
+      isVerified: true,
+    },
+  });
+
+  const customer1 = await prisma.user.create({
+    data: {
+      name: "Charlie Customer",
+      email: "charlie@customer.com",
+      password,
+      phone: "08033334444",
+      address: "12 Customer Street",
+      role: "CUSTOMER",
       isVerified: true,
     },
   });
@@ -45,7 +58,7 @@ async function main() {
       deliveryFee: 500,
       minimumOrder: 1000,
       isOpen: true,
-      ownerId: user1.id,
+      ownerId: vendor1.id,
     },
   });
 
@@ -61,7 +74,7 @@ async function main() {
       deliveryFee: 300,
       minimumOrder: 800,
       isOpen: true,
-      ownerId: user2.id,
+      ownerId: vendor2.id,
     },
   });
 
@@ -77,7 +90,7 @@ async function main() {
       deliveryFee: 200,
       minimumOrder: 500,
       isOpen: true,
-      ownerId: user1.id,
+      ownerId: vendor1.id,
     },
   });
 
@@ -94,7 +107,7 @@ async function main() {
         restaurantId: restaurant1.id,
       },
       {
-        name: "Pepper soup",
+        name: "Pepper Soup",
         description: "Delicious Spicy pepper soup",
         price: 1800,
         available: true,
@@ -104,7 +117,7 @@ async function main() {
       },
       {
         name: "Plantain",
-        description: "Fresh platain",
+        description: "Fresh plantain",
         price: 2500,
         available: true,
         imageUrl:
@@ -133,6 +146,7 @@ async function main() {
   });
 
   console.log("Database seeded successfully!");
+  console.log("Customer to test orders:", customer1.email, customer1.id);
 }
 
 main()

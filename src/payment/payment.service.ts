@@ -19,7 +19,7 @@ export class PaymentService {
         reference,
         customer: { name, email },
         redirect_url: "http://localhost:3000/orders",
-        notification_url: "http://localhost:5000/api/payment/webhook",
+        notification_url: "https://food-ordering-app.up.railway.app/api/payment/webhook",
       },
       {
         headers: {

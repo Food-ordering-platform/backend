@@ -11,7 +11,7 @@
     "sourceMap": true,
     "esModuleInterop": true,
     "moduleResolution": "node",
-    "ignoreDeprecations": "6.0",
+    // "ignoreDeprecations": "6.0",
 
     "strict": true,
     "skipLibCheck": true

@@ -43,6 +43,7 @@ model Otp {
 model Restaurant {
   id        String     @id @default(uuid())
   name      String
+  email     String     @unique
   address   String
   phone     String?
   imageUrl  String?    // optional restaurant cover image
@@ -85,6 +86,7 @@ model Order {
   items           OrderItem[]
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
+  reference       String        @unique   @default(uuid())
 }
 
 model OrderItem {

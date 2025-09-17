@@ -3,24 +3,25 @@ import { AuthService } from "./auth.service";
 import { registerSchema, loginSchema } from "./auth.validator";
 
 export class AuthController {
-  // Register a new user
+  // Register a new user (Customer or Vendor)
   static async register(req: Request, res: Response) {
     try {
       // validate request
       const data = registerSchema.parse(req.body);
 
       // call service (creates user, otp, and token)
-      const { user, token } = await AuthService.register(
+      const { user, token } = await AuthService.registerUser(
         data.name,
         data.email,
         data.password,
-        data.phone
+        data.phone,
+        data.role // 👈 pass role to service
       );
 
       return res.status(201).json({
-        message: "User registered. OTP sent to email/phone",
+        message: "User registered. OTP sent to email",
         user,
-        token, // 👈 frontend needs this to redirect to verify-otp page
+        token, // frontend uses this for verify-otp flow
       });
     } catch (err: any) {
       return res.status(400).json({ error: err.message });
@@ -45,7 +46,7 @@ export class AuthController {
   // Verify OTP
   static async verifyOtp(req: Request, res: Response) {
     try {
-      const { token, code } = req.body; 
+      const { token, code } = req.body;
       const result = await AuthService.verifyOtp(token, code);
 
       return res.status(200).json(result);

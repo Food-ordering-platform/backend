@@ -5,6 +5,7 @@ import morgan from "morgan";
 import authRouter from "./auth/auth.route";
 import restaurantRouter from "./restuarant/restaurant.route";
 import orderRouter from "./order/order.routes";
+import paymentRouter from "./payment/payment.route"
 
 const app = express();
 
@@ -16,5 +17,6 @@ app.use(express.json());
 app.use("/api/auth", authRouter);
 app.use("/api/restaurant", restaurantRouter);
 app.use("/api/orders", orderRouter); 
+app.use("/api/payment", paymentRouter)
 
 export default app;

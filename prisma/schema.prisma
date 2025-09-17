@@ -86,6 +86,7 @@ model Order {
   items           OrderItem[]
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
+  reference       String        @unique   @default(uuid())
 }
 
 model OrderItem {

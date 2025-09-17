@@ -21,15 +21,28 @@ export class RestaurantService {
   }
 
   // Get a single restaurant by ID (with menu)
-  static async getRestaurantById(id: string) {
-    return await prisma.restaurant.findUnique({
-      where: { id },
-      include: {
-        menuItems: true,
-        orders: true,
+static async getRestaurantById(id: string) {
+  return await prisma.restaurant.findUnique({
+    where: { id },
+    include: {
+      menuItems: true,
+      orders: {
+        select: {
+          id: true,
+          customerId: true,
+          totalAmount: true,
+          paymentStatus: true,
+          status: true,
+          deliveryAddress: true,
+          createdAt: true,
+          updatedAt: true,
+          // remove `reference` if it doesn’t exist yet
+        },
       },
-    });
-  }
+    },
+  });
+}
+
 
   // Update restaurant info
   static async updateRestaurant(id: string, data: any) {

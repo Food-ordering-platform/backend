@@ -10,6 +10,6 @@ router.post("/", OrderController.createOrder);
 router.get("/customer/:customerId", OrderController.getAllOrders);
 
 // Get a single order by ID
-router.get("/single/:orderId", OrderController.getSingleOrderbyId);
+router.get("/single/:orderId", OrderController.getSingleOrderById);
 
 export default router;

@@ -76,7 +76,7 @@ export class PaymentController {
     }
     const signature = req.headers["x-korapay-signature"] as string;
     const expectedSignature = crypto
-      .createHmac("sha256", process.env.KORAPAY_SECRET!)
+      .createHmac("sha256", process.env.KORAPAY_SECRET_KEY!)
       .update(payload)
       .digest("hex");
 

@@ -66,12 +66,12 @@ export class PaymentController {
     }
   }
 
-  // Secure Webhook endpoint
+  // Secure Webhook endpoint (fixed)
   static async webhook(req: Request, res: Response) {
     try {
-      // 1️⃣ Verify Korapay signature
+      // 1️⃣ Use raw body for signature verification
+      const payload = (req as any).rawBody;
       const signature = req.headers["x-korapay-signature"] as string;
-      const payload = JSON.stringify(req.body);
       const KORAPAY_SECRET = process.env.KORAPAY_SECRET || "";
 
       const expectedSignature = crypto
@@ -84,23 +84,32 @@ export class PaymentController {
         return res.status(403).json({ error: "Unauthorized: invalid signature" });
       }
 
-      // 2️⃣ Process the webhook
-      const { event, data } = req.body;
+      // 2️⃣ Parse JSON payload
+      const { event, data } = JSON.parse(payload);
       const { reference } = data;
 
-      const order = await prisma.order.findUnique({ where: { reference } });
-      if (!order) return res.status(404).json({ error: "Order not found" });
+      console.log("Webhook received:", event, reference);
 
+      // 3️⃣ Find the order
+      const order = await prisma.order.findUnique({ where: { reference } });
+      if (!order) {
+        console.warn("Order not found for reference:", reference);
+        return res.status(404).json({ error: "Order not found" });
+      }
+
+      // 4️⃣ Update paymentStatus based on event
       if (event === "charge.success") {
         await prisma.order.update({ where: { reference }, data: { paymentStatus: "PAID" } });
       } else if (event === "charge.failed") {
         await prisma.order.update({ where: { reference }, data: { paymentStatus: "FAILED" } });
+      } else {
+        console.log("Unhandled event type:", event);
       }
 
-      res.sendStatus(200);
+      return res.sendStatus(200);
     } catch (err) {
       console.error("Webhook error:", err);
-      res.status(500).json({ error: "Webhook processing failed" });
+      return res.status(500).json({ error: "Webhook processing failed" });
     }
   }
 }

@@ -1,14 +1,13 @@
 import { Router } from "express";
 import { PaymentController } from "./payment.controller";
-import { captureRawBody } from "../middlewares/rawBodyMiddleware";
 import bodyParser from "body-parser";
 
 const router = Router();
 
-// Use bodyParser.raw specifically for webhook
+// Webhook route with raw body parser
 router.post(
   "/webhook",
-  bodyParser.raw({ type: '*/*' }), // <- Accept all content types
+  bodyParser.raw({ type: "application/json" }), // Matches Korapay's content-type
   PaymentController.webhook
 );
 

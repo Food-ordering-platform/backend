@@ -65,40 +65,39 @@ export class PaymentController {
       return res.status(500).json({ error: err.message });
     }
   }
-
   // Secure Webhook endpoint (fixed)
  static async webhook(req: Request, res: Response) {
   try {
-    const rawBody = (req as any).body; // Keep as Buffer to avoid tampering
+    const rawBody = req.body; // Should be Buffer from bodyParser.raw()
     if (!rawBody || rawBody.length === 0) {
-      console.error("rawBody missing!");
+      console.error("rawBody missing!", { body: req.body, headers: req.headers });
       return res.status(400).json({ error: "Missing raw payload" });
     }
 
-    const payloadString = rawBody.toString();
+    const payloadString = Buffer.from(rawBody).toString("utf-8");
+    console.log("Received payloadString:", payloadString);
     let parsed;
     try {
       parsed = JSON.parse(payloadString);
     } catch (e) {
-      console.error("JSON parse error:", e);
+      console.error("JSON parse error:", e, { payload: payloadString });
       return res.status(400).json({ error: "Invalid JSON payload" });
     }
 
     const { event, data } = parsed;
     if (!data) {
-      console.error("Missing data in payload");
+      console.error("Missing data in payload", { parsed });
       return res.status(400).json({ error: "Invalid payload structure" });
     }
 
-    // Compute signature on JSON.stringify(data) only
     const expectedSignature = crypto
       .createHmac("sha256", process.env.KORAPAY_SECRET_KEY!)
-      .update(JSON.stringify(data))  // <-- This is the fix: hash only the data object
+      .update(JSON.stringify(data))
       .digest("hex");
 
     const signature = req.headers["x-korapay-signature"] as string;
     if (!signature) {
-      console.warn("Missing signature header");
+      console.warn("Missing signature header", { headers: req.headers });
       return res.status(403).json({ error: "Unauthorized: missing signature" });
     }
 

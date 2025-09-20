@@ -25,7 +25,11 @@ static async getRestaurantById(id: string) {
   return await prisma.restaurant.findUnique({
     where: { id },
     include: {
-      menuItems: true,
+      categories: {
+        include: {
+          menuItems: true, // nested items
+        },
+      },
       orders: {
         select: {
           id: true,
@@ -36,12 +40,12 @@ static async getRestaurantById(id: string) {
           deliveryAddress: true,
           createdAt: true,
           updatedAt: true,
-          // remove `reference` if it doesn’t exist yet
         },
       },
     },
   });
 }
+
 
 
   // Update restaurant info

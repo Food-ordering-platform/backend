@@ -1,9 +1,6 @@
 // This is your Prisma schema file,
 // learn more about it in the docs: https://pris.ly/d/prisma-schema
 
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
-
 generator client {
   provider = "prisma-client-js"
   output   = "../generated/prisma"
@@ -13,21 +10,22 @@ datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
 }
-model User {
-  id        String   @id @default(uuid())
-  name      String
-  email     String   @unique
-  password  String
-  address   String?
-  phone     String?
-  role      Role     @default(CUSTOMER)
-  restaurants Restaurant[] @relation("RestaurantOwner")
-  orders    Order[]   @relation("CustomerOrders")
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  isVerified Boolean  @default(false)   // 👈 added field
 
-  otp       Otp[]
+model User {
+  id          String       @id @default(uuid())
+  name        String
+  email       String       @unique
+  password    String
+  address     String?
+  phone       String?
+  role        Role         @default(CUSTOMER)
+  restaurants Restaurant[] @relation("RestaurantOwner")
+  orders      Order[]      @relation("CustomerOrders")
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  isVerified  Boolean      @default(false)
+
+  otp Otp[]
 }
 
 model Otp {
@@ -41,36 +39,49 @@ model Otp {
 }
 
 model Restaurant {
-  id        String     @id @default(uuid())
-  name      String
-  email     String     @unique
-  address   String
-  phone     String?
-  imageUrl  String?    // optional restaurant cover image
-  owner     User       @relation("RestaurantOwner", fields: [ownerId], references: [id])
-  ownerId   String
-  menuItems MenuItem[]
-  orders    Order[]
-  createdAt DateTime   @default(now())
-  updatedAt DateTime   @updatedAt
+  id           String        @id @default(uuid())
+  name         String
+  email        String        @unique
+  address      String
+  phone        String?
+  imageUrl     String?       // optional restaurant cover image
+  owner        User          @relation("RestaurantOwner", fields: [ownerId], references: [id])
+  ownerId      String
+  menuItems    MenuItem[]
+  categories   MenuCategory[]
+  orders       Order[]
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
   deliveryTime String
   deliveryFee  Float
   minimumOrder Float
-  isOpen  Boolean
+  isOpen       Boolean
+}
+
+model MenuCategory {
+  id           String      @id @default(uuid())
+  name         String
+  restaurant   Restaurant  @relation(fields: [restaurantId], references: [id])
+  restaurantId String
+  menuItems    MenuItem[]
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
 }
 
 model MenuItem {
-  id           String     @id @default(uuid())
+  id           String       @id @default(uuid())
   name         String
   description  String?
   price        Float
-  available    Boolean    @default(true)
-  imageUrl     String?    // add this for menu item images
-  restaurant   Restaurant @relation(fields: [restaurantId], references: [id])
+  available    Boolean      @default(true)
+  imageUrl     String?
+  restaurant   Restaurant   @relation(fields: [restaurantId], references: [id])
   restaurantId String
+  category     MenuCategory @relation(fields: [categoryId], references: [id])
+  categoryId   String
   orderItems   OrderItem[]
-  createdAt    DateTime   @default(now())
-  updatedAt    DateTime   @updatedAt
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
 }
 
 model Order {
@@ -86,7 +97,7 @@ model Order {
   items           OrderItem[]
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
-  reference       String        @unique   @default(uuid())
+  reference       String        @unique @default(uuid())
 }
 
 model OrderItem {

@@ -18,7 +18,7 @@ export class PaymentService {
         currency: "NGN",
         reference,
         customer: { name, email },
-        redirect_url: "http://localhost:3000/orders",
+        redirect_url: "https://food-ordering-app.up.railway.app/api/orders",
         notification_url: "https://food-ordering-app.up.railway.app/api/payment/webhook",
       },
       {

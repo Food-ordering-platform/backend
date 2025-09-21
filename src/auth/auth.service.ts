@@ -14,11 +14,31 @@ export class AuthService {
     email: string,
     password: string,
     phone?: string,
-    role: "CUSTOMER" | "VENDOR" = "CUSTOMER" // default CUSTOMER
+    role: "CUSTOMER" | "VENDOR" = "CUSTOMER"
   ) {
     // check if the user exists
     const existingUser = await prisma.user.findUnique({ where: { email } });
+
     if (existingUser) {
+      if (!existingUser.isVerified) {
+        // regenerate OTP if not verified
+        const code = await this.generateOtp(existingUser.id);
+
+        // fire & forget email (no await to prevent delay)
+        sendOtPEmail(existingUser.email, code).catch((err) => {
+          console.error("Failed to resend OTP email", err);
+        });
+
+        // short-lived token for OTP verification
+        const token = jwt.sign(
+          { userId: existingUser.id, role: existingUser.role },
+          process.env.JWT_SECRET as string,
+          { expiresIn: "15m" }
+        );
+
+        return { user: existingUser, token };
+      }
+
       throw new Error("Email already in use");
     }
 
@@ -41,10 +61,10 @@ export class AuthService {
     if (role === "VENDOR") {
       await prisma.restaurant.create({
         data: {
-          name, // can later allow separate restaurant name field
+          name,
           email,
           phone,
-          address: "", // vendor can update later
+          address: "",
           ownerId: user.id,
           deliveryTime: "30-40 mins",
           deliveryFee: 0,
@@ -57,15 +77,17 @@ export class AuthService {
     // generate otp
     const code = await this.generateOtp(user.id);
 
-    // Generate short-lived JWT
+    // short-lived JWT for OTP verification
     const token = jwt.sign(
       { userId: user.id, role: user.role },
       process.env.JWT_SECRET as string,
       { expiresIn: "15m" }
     );
 
-    // Send OTP email
-    await sendOtPEmail(user.email, code);
+    // fire & forget OTP email
+    sendOtPEmail(user.email, code).catch((err) => {
+      console.error("Failed to send OTP email", err);
+    });
 
     return { user, token };
   }
@@ -80,6 +102,11 @@ export class AuthService {
     const isValid = await bcrypt.compare(password, user.password);
     if (!isValid) {
       throw new Error("Invalid password");
+    }
+
+    // 👇 Block login if user not verified
+    if (!user.isVerified) {
+      throw new Error("Please verify your account with the OTP first.");
     }
 
     // Generate JWT
@@ -103,49 +130,48 @@ export class AuthService {
     return code;
   }
 
- // Verify OTP
-static async verifyOtp(token: string, code: string) {
-  try {
-    // decode token
-    const payload = jwt.verify(
-      token,
-      process.env.JWT_SECRET as string
-    ) as { userId: string };
+  // Verify OTP
+  static async verifyOtp(token: string, code: string) {
+    try {
+      // decode token
+      const payload = jwt.verify(
+        token,
+        process.env.JWT_SECRET as string
+      ) as { userId: string };
 
-    const otp = await prisma.otp.findFirst({
-      where: {
-        userId: payload.userId,
-        code,
-        used: false,
-        expiresAt: { gt: new Date() },
-      },
-    });
+      const otp = await prisma.otp.findFirst({
+        where: {
+          userId: payload.userId,
+          code,
+          used: false,
+          expiresAt: { gt: new Date() },
+        },
+      });
 
-    if (!otp) throw new Error("Invalid or expired OTP");
+      if (!otp) throw new Error("Invalid or expired OTP");
 
-    // mark otp as used
-    await prisma.otp.update({
-      where: { id: otp.id },
-      data: { used: true },
-    });
+      // mark otp as used
+      await prisma.otp.update({
+        where: { id: otp.id },
+        data: { used: true },
+      });
 
-    // mark user as verified
-    const user = await prisma.user.update({
-      where: { id: payload.userId },
-      data: { isVerified: true },
-    });
+      // mark user as verified
+      const user = await prisma.user.update({
+        where: { id: payload.userId },
+        data: { isVerified: true },
+      });
 
-    // 👇 return role + message
-    return { 
-      message: "Account Verified Successfully",
-      user: {
-        id: user.id,
-        email: user.email,
-        role: user.role,
-      }
-    };
-  } catch (err) {
-    throw new Error("Invalid or expired token");
+      return {
+        message: "Account Verified Successfully",
+        user: {
+          id: user.id,
+          email: user.email,
+          role: user.role,
+        },
+      };
+    } catch (err) {
+      throw new Error("Invalid or expired token");
+    }
   }
-}
 }

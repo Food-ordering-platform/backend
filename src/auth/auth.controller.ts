@@ -6,21 +6,24 @@ export class AuthController {
   // Register a new user (Customer or Vendor)
   static async register(req: Request, res: Response) {
     try {
-      // validate request
       const data = registerSchema.parse(req.body);
 
-      // call service (creates user, otp, and token)
       const { user, token } = await AuthService.registerUser(
         data.name,
         data.email,
         data.password,
         data.phone,
-        data.role // 👈 pass role to service
+        data.role
       );
 
       return res.status(201).json({
         message: "User registered. OTP sent to email",
-        user,
+        user: {
+          id: user.id,
+          email: user.email,
+          role: user.role,
+          isVerified: user.isVerified,
+        },
         token, // frontend uses this for verify-otp flow
       });
     } catch (err: any) {

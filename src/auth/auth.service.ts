@@ -24,10 +24,8 @@ export class AuthService {
         // regenerate OTP if not verified
         const code = await this.generateOtp(existingUser.id);
 
-        // fire & forget email (no await to prevent delay)
-        sendOtPEmail(existingUser.email, code).catch((err) => {
-          console.error("Failed to resend OTP email", err);
-        });
+        // ✅ wait for OTP email
+        await sendOtPEmail(existingUser.email, code);
 
         // short-lived token for OTP verification
         const token = jwt.sign(
@@ -84,10 +82,8 @@ export class AuthService {
       { expiresIn: "15m" }
     );
 
-    // fire & forget OTP email
-    sendOtPEmail(user.email, code).catch((err) => {
-      console.error("Failed to send OTP email", err);
-    });
+    // ✅ wait for OTP email
+    await sendOtPEmail(user.email, code);
 
     return { user, token };
   }

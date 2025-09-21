@@ -1,22 +1,26 @@
-import nodemailer from "nodemailer";
+// mailer.ts
+import { Resend } from "resend";
 
-const transporter = nodemailer.createTransport({
-    service: "gmail",
-    auth:{
-        user:process.env.EMAIL_USER,
-        pass:process.env.EMAIL_PASS, 
+const resend = new Resend(process.env.RESEND_API_KEY);
+
+export async function sendOtPEmail(email: string, otp: string) {
+  try {
+    const { data, error } = await resend.emails.send({
+      from: "Food App <onboarding@resend.dev>", // Use your verified domain or default
+      to: email,
+      subject: "Your OTP Code",
+      html: `<p>Your OTP code is: <b>${otp}</b></p>`,
+    });
+
+    if (error) {
+      console.error("Failed to send OTP email:", error);
+      throw new Error("OTP email failed");
     }
-})
 
-
-export const sendOtPEmail = async (to:string, otp:string) => {
-    const mailOption = {
-        from: `"Food APP" <${process.env.EMAIL_USER}`,
-        to, 
-        subject: "Your OTP code",
-        text: `Your OTP code is ${otp}. It will expire in 10 minutes.`,
-        html: `<p>Your OTP code is <b>${otp}</b>. It will expire in 10 minutes.</p>`,
-    }
-
-    await transporter.sendMail(mailOption)
+    console.log("OTP email sent successfully:", data?.id);
+    return data;
+  } catch (err) {
+    console.error("Error sending OTP email:", err);
+    throw err;
+  }
 }

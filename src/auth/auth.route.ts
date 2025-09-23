@@ -3,11 +3,22 @@ import { AuthController } from "./auth.controller";
 
 const router = Router();
 
-//POST request /api/auth/register => calls authcontroller.register
-router.post("/register", AuthController.register)
+// Register
+router.post("/register", AuthController.register);
 
-//POST request /api/auth/login => calls authcontroller.login
-router.post("/login", AuthController.login)
-router.post("/verify-otp", AuthController.verifyOtp)
+// Login
+router.post("/login", AuthController.login);
 
-export default router
+// Verify registration OTP
+router.post("/verify-otp", AuthController.verifyOtp);
+
+// Forgot password (send OTP)
+router.post("/forgot-password", AuthController.forgotPassword);
+
+// Verify OTP for reset password
+router.post("/verify-reset-otp", AuthController.verifyResetOtp);
+
+// Reset password
+router.post("/reset-password", AuthController.resetPassword);
+
+export default router;

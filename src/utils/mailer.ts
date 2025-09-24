@@ -1,4 +1,3 @@
-// backend/utils/sendEmail.ts
 import axios from "axios";
 
 export async function sendOtPEmail(email: string, otp: string) {

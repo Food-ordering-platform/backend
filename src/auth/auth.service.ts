@@ -126,7 +126,7 @@ export class AuthService {
           expiresAt: { gt: new Date() },
         },
       });
-
+ 
       if (!otp) throw new Error("Invalid or expired OTP");
 
       await prisma.otp.update({

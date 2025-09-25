@@ -24,7 +24,7 @@ export class OrderService {
         status: "PENDING",
         deliveryAddress,
         items: {
-          create: items.map(i => ({
+          create: items.map((i) => ({
             menuItemId: i.menuItemId,
             quantity: i.quantity,
             price: i.price,
@@ -49,9 +49,21 @@ export class OrderService {
   static async getOrdersByCustomer(customerId: string) {
     return prisma.order.findMany({
       where: { customerId },
-      include: {
-        items: { include: { menuItem: true } },
-        restaurant: true,
+      select: {
+        id: true,
+        reference: true,
+        totalAmount: true,
+        paymentStatus: true,
+        status: true,
+        restaurant: { select: { name: true } },
+        items: {
+          select: {
+            quantity: true,
+            price: true,
+            menuItem: { select: { name: true } },
+          },
+        },
+        // remove createdAt/updatedAt if you don’t want them
       },
       orderBy: { createdAt: "desc" },
     });

@@ -52,18 +52,22 @@ export class OrderController {
     }
   }
 
-  // Get a single order by order item ID
-  static async getSingleOrderById(req: Request, res: Response) {
+  // Get a single order by reference
+  static async getSingleOrder(req: Request, res: Response) {
     try {
-      const { orderItemId } = req.params;
-      if (!orderItemId) return res.status(400).json({ success: false, message: "OrderId is missing" });
+      const { reference } = req.params;
+      if (!reference) {
+        return res.status(400).json({ success: false, message: "Order reference is required" });
+      }
 
-      const order = await OrderService.getOrderById(orderItemId);
-      if (!order) return res.status(404).json({ success: false, message: "Order not found" });
+      const order = await OrderService.getOrderByReference(reference);
+      if (!order) {
+        return res.status(404).json({ success: false, message: "Order not found" });
+      }
 
       return res.status(200).json({ success: true, data: order });
     } catch (err: any) {
-      console.error("Get particular order error:", err.message);
+      console.error("Get single order error:", err.message);
       return res.status(500).json({ success: false, message: err.message || "Server Error" });
     }
   }

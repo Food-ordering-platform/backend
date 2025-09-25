@@ -69,11 +69,19 @@ export class OrderService {
     });
   }
 
-  // Get a single order by order item ID
-  static async getOrderById(orderItemId: string) {
-    return prisma.orderItem.findUnique({
-      where: { id: orderItemId },
-      include: { menuItem: true },
-    });
+  static async getOrderByReference(reference: string) {
+  return prisma.order.findUnique({
+    where: { reference },
+    include: {
+      restaurant: { select: { name: true } },
+      items: {
+        select: {
+          quantity: true,
+          price: true,
+          menuItem: { select: { name: true } },
+        },
+      },
+    },
+  });
   }
 }

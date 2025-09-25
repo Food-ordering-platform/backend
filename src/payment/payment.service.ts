@@ -3,7 +3,6 @@ import axios from "axios";
 const KORAPAY_SECRET_KEY = process.env.KORAPAY_SECRET_KEY as string;
 
 export class PaymentService {
-
   // Initialize payment
   static async initiatePayment(
     amount: number,
@@ -18,8 +17,10 @@ export class PaymentService {
         currency: "NGN",
         reference,
         customer: { name, email },
-        redirect_url: "https://food-ordering-app.vercel.app/orders",
-        notification_url: "https://food-ordering-app.up.railway.app/api/payment/webhook",
+        redirect_url: `https://food-ordering-app.vercel.app/orders/details?reference=${reference}`, // ✅ updated
+
+        notification_url:
+          "https://food-ordering-app.up.railway.app/api/payment/webhook",
       },
       {
         headers: {
@@ -44,5 +45,4 @@ export class PaymentService {
 
     return response.data.data;
   }
-
 }

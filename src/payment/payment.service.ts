@@ -18,7 +18,7 @@ export class PaymentService {
         currency: "NGN",
         reference,
         customer: { name, email },
-        redirect_url: "https://food-ordering-app.up.railway.app/api/orders",
+        redirect_url: "https://food-ordering-app.vercel.app/orders",
         notification_url: "https://food-ordering-app.up.railway.app/api/payment/webhook",
       },
       {

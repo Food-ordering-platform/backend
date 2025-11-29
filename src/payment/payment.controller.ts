@@ -7,36 +7,40 @@ const prisma = new PrismaClient();
 
 export class PaymentController {
   // Initialize payment (unchanged)
-  static async initialize(req: Request, res: Response) {
-    try {
-      const { amount, email, name, customerId, restaurantId, items, deliveryAddress } = req.body;
+ static async initialize(req: Request, res: Response) {
+  try {
+    const { amount, email, name, customerId, restaurantId, items, deliveryAddress } = req.body;
 
-      const order = await prisma.order.create({
-        data: {
-          customerId,
-          restaurantId,
-          totalAmount: amount,
-          paymentStatus: "PENDING",
-          status: "PENDING",
-          deliveryAddress,
-          items: { create: items },
-        },
-        include: { items: true },
-      });
+    // Generate a random token for this order
+    const token = crypto.randomBytes(16).toString("hex");
 
-      const checkoutUrl = await PaymentService.initiatePayment(
-        amount,
-        name,
-        email,
-        order.reference
-      );
+    const order = await prisma.order.create({
+      data: {
+        customerId,
+        restaurantId,
+        totalAmount: amount,
+        paymentStatus: "PENDING",
+        status: "PENDING",
+        deliveryAddress,
+        token, // ✅ include the generated token
+        items: { create: items },
+      },
+      include: { items: true },
+    });
 
-      return res.json({ checkoutUrl, reference: order.reference, orderId: order.id });
-    } catch (err: any) {
-      console.error(err);
-      return res.status(500).json({ error: err.message });
-    }
+    const checkoutUrl = await PaymentService.initiatePayment(
+      amount,
+      name,
+      email,
+      order.reference
+    );
+
+    return res.json({ checkoutUrl, reference: order.reference, orderId: order.id });
+  } catch (err: any) {
+    console.error(err);
+    return res.status(500).json({ error: err.message });
   }
+}
 
   // Verify payment (unchanged)
   static async verify(req: Request, res: Response) {

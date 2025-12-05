@@ -56,7 +56,6 @@ export class AuthService {
           address: "",
           ownerId: user.id,
           prepTime: 20, // Default prep time
-          deliveryFee: 500, // Default fee
           minimumOrder: 0,
           isOpen: false,
         },

@@ -4,6 +4,9 @@ import { randomBytes } from "crypto";
 
 const prisma = new PrismaClient();
 
+// Platform Settings
+const PLATFORM_DELIVERY_FEE = 500;
+
 // Helper to generate a unique reference
 function generateReference(): string {
   return randomBytes(12).toString("hex");
@@ -21,7 +24,7 @@ export class OrderService {
     customerEmail: string
   ) {
 
-    // 1. Fetch Restaurant to get the current Delivery Fee Snapshot
+    // 1. Fetch Restaurant (Just to ensure it exists)
     const restaurant = await prisma.restaurant.findUnique({
       where: { id: restaurantId },
     });
@@ -54,11 +57,11 @@ export class OrderService {
         customerId,
         restaurantId,
         totalAmount,
-        deliveryFee: restaurant.deliveryFee, // <--- SNAPSHOT
+        deliveryFee: PLATFORM_DELIVERY_FEE, // <--- CHANGED: Uses Platform Fee
         paymentStatus: "PENDING",
         status: "PENDING",
         deliveryAddress,
-        reference, // <--- FIXED: Added required reference
+        reference,
         items: {
           create: items.map((i) => {
             const originalItem = itemsMap.get(i.menuItemId);
@@ -106,7 +109,7 @@ export class OrderService {
             quantity: true,
             price: true,
             menuItemName: true, // <--- Retrieve Snapshot Name
-            // FIXED: Removed 'menuItem' relation select because it no longer exists in OrderItem
+            // No menuItem relation
           },
         },
         createdAt: true,
@@ -132,7 +135,6 @@ export class OrderService {
             price: true,
             menuItemName: true,
             menuItemId: true,
-            // FIXED: Removed 'menuItem' relation select
           },
         },
       },

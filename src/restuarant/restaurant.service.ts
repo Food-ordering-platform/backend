@@ -13,7 +13,6 @@ export class RestaurantService {
         phone: true,
         imageUrl: true,
         prepTime:true,
-        deliveryFee: true,
         minimumOrder: true,
         isOpen: true,
       },

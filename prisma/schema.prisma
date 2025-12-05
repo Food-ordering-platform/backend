@@ -1,5 +1,4 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
+// This is your Prisma schema file
 
 generator client {
   provider = "prisma-client-js"
@@ -18,12 +17,10 @@ model User {
   name        String
   email       String       @unique
   password    String
-  // Phone is now REQUIRED for logistics
-  phone       String       
-  address     String?      // User's default address
+  phone       String       // Required
+  address     String?      
   role        Role         @default(CUSTOMER)
   
-  // Relations
   restaurant  Restaurant?  @relation("RestaurantOwner") 
   orders      Order[]      @relation("CustomerOrders")
   otp         Otp[]
@@ -51,10 +48,10 @@ model Restaurant {
   email        String        @unique 
   address      String
   phone        String
-  imageUrl     String?       // Cover image
+  imageUrl     String?       
   
   owner        User          @relation("RestaurantOwner", fields: [ownerId], references: [id])
-  ownerId      String        @unique // One-to-One: One User = One Restaurant
+  ownerId      String        @unique 
 
   categories   MenuCategory[]
   menuItems    MenuItem[]
@@ -63,13 +60,10 @@ model Restaurant {
   // --- SETTINGS ---
   isOpen       Boolean       @default(false)
   
-  // Replaced 'deliveryTime' (String) with 'prepTime' (Int - minutes)
-  // This is the time the Vendor needs to COOK.
+  // Vendor sets only Prep Time.
+  // Delivery Fee is removed because YOU (Platform) control it globally.
   prepTime     Int           @default(20) 
-  
-  // Platform settings for this specific restaurant (Managed by Admin)
-  deliveryFee  Float         @default(500.0) // Base delivery fee for this location
-  minimumOrder Float         @default(0.0)
+  minimumOrder Float         @default(0.0) // Can keep this if vendors want to enforce minimums
 
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
@@ -102,8 +96,6 @@ model MenuItem {
 
   createdAt    DateTime     @default(now())
   updatedAt    DateTime     @updatedAt
-  
-  // Soft Delete: If this has a date, the item is "deleted" but stays in DB for history
   deletedAt    DateTime?    
 }
 
@@ -121,9 +113,8 @@ model Order {
   items           OrderItem[]
 
   // --- Financial Snapshot ---
-  // We store these SEPARATELY so we know exactly what was charged at that moment
   totalAmount     Float         
-  deliveryFee     Float         
+  deliveryFee     Float         // Still kept here to snapshot what YOU charged the user
   
   status          OrderStatus   @default(PENDING)
   paymentStatus   PaymentStatus @default(PENDING)
@@ -144,23 +135,20 @@ model OrderItem {
   order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
   orderId   String
 
-  // --- Item Snapshot ---
-  // We copy the name here. If the restaurant renames "Jollof" to "Rice", 
-  // this old order will still say "Jollof".
   menuItemName String  
-  menuItemId   String? // Optional: because the original item might be deleted later
+  menuItemId   String? 
   
   quantity  Int
-  price     Float    // Price per unit AT THE TIME of order
+  price     Float    
 }
 
 // ================= ENUMS =================
 
 enum OrderStatus {
-  PENDING          // Created, awaiting payment
+  PENDING
   PREPARING
-  OUT_FOR_DELIVERY // Rider has picked up
-  DELIVERED        // Complete
+  OUT_FOR_DELIVERY 
+  DELIVERED
 }
 
 enum PaymentStatus {

@@ -54,7 +54,7 @@ async function main() {
       phone: "08012345678",
       imageUrl:
         "https://res.cloudinary.com/dnq5zkskt/image/upload/v1758018670/Aj_takeaway_le3f7d.webp",
-      deliveryTime: "30-40 mins",
+      prepTime: 30,
       deliveryFee: 500,
       minimumOrder: 1000,
       isOpen: true,
@@ -70,7 +70,7 @@ async function main() {
       phone: "08087654321",
       imageUrl:
         "https://res.cloudinary.com/dnq5zkskt/image/upload/v1758018721/mr_biggs_azei8n.jpg",
-      deliveryTime: "25-35 mins",
+      prepTime: 30,
       deliveryFee: 300,
       minimumOrder: 800,
       isOpen: true,
@@ -86,7 +86,7 @@ async function main() {
       phone: "08055555555",
       imageUrl:
         "https://res.cloudinary.com/dnq5zkskt/image/upload/v1758018752/sizzlas_ua6sew.png",
-      deliveryTime: "20-30 mins",
+      prepTime: 30,
       deliveryFee: 200,
       minimumOrder: 500,
       isOpen: true,

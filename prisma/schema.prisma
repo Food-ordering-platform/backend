@@ -11,59 +11,77 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// ================= USER & AUTH =================
+
 model User {
   id          String       @id @default(uuid())
   name        String
   email       String       @unique
   password    String
-  address     String?
-  phone       String?
+  // Phone is now REQUIRED for logistics
+  phone       String       
+  address     String?      // User's default address
   role        Role         @default(CUSTOMER)
-  restaurants Restaurant[] @relation("RestaurantOwner")
+  
+  // Relations
+  restaurant  Restaurant?  @relation("RestaurantOwner") 
   orders      Order[]      @relation("CustomerOrders")
+  otp         Otp[]
+
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
   isVerified  Boolean      @default(false)
-
-  otp Otp[]
 }
 
 model Otp {
   id        String   @id @default(cuid())
   code      String
   userId    String
-  user      User     @relation(fields: [userId], references: [id])
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   createdAt DateTime @default(now())
   expiresAt DateTime
   used      Boolean  @default(false)
 }
 
+// ================= RESTAURANT MANAGEMENT =================
+
 model Restaurant {
   id           String        @id @default(uuid())
   name         String
-  email        String        @unique
+  email        String        @unique 
   address      String
-  phone        String?
-  imageUrl     String?       // optional restaurant cover image
+  phone        String
+  imageUrl     String?       // Cover image
+  
   owner        User          @relation("RestaurantOwner", fields: [ownerId], references: [id])
-  ownerId      String
-  menuItems    MenuItem[]
+  ownerId      String        @unique // One-to-One: One User = One Restaurant
+
   categories   MenuCategory[]
+  menuItems    MenuItem[]
   orders       Order[]
+  
+  // --- SETTINGS ---
+  isOpen       Boolean       @default(false)
+  
+  // Replaced 'deliveryTime' (String) with 'prepTime' (Int - minutes)
+  // This is the time the Vendor needs to COOK.
+  prepTime     Int           @default(20) 
+  
+  // Platform settings for this specific restaurant (Managed by Admin)
+  deliveryFee  Float         @default(500.0) // Base delivery fee for this location
+  minimumOrder Float         @default(0.0)
+
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
-  deliveryTime String
-  deliveryFee  Float
-  minimumOrder Float
-  isOpen       Boolean
 }
 
 model MenuCategory {
   id           String      @id @default(uuid())
   name         String
-  restaurant   Restaurant  @relation(fields: [restaurantId], references: [id])
+  restaurant   Restaurant  @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
   restaurantId String
   menuItems    MenuItem[]
+  
   createdAt    DateTime    @default(now())
   updatedAt    DateTime    @updatedAt
 }
@@ -73,51 +91,76 @@ model MenuItem {
   name         String
   description  String?
   price        Float
-  available    Boolean      @default(true)
   imageUrl     String?
-  restaurant   Restaurant   @relation(fields: [restaurantId], references: [id])
+  available    Boolean      @default(true)
+  
+  restaurant   Restaurant   @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
   restaurantId String
+  
   category     MenuCategory @relation(fields: [categoryId], references: [id])
   categoryId   String
-  orderItems   OrderItem[]
+
   createdAt    DateTime     @default(now())
   updatedAt    DateTime     @updatedAt
+  
+  // Soft Delete: If this has a date, the item is "deleted" but stays in DB for history
+  deletedAt    DateTime?    
 }
+
+// ================= ORDERING & LOGISTICS =================
 
 model Order {
   id              String        @id @default(uuid())
+  
   customer        User          @relation("CustomerOrders", fields: [customerId], references: [id])
   customerId      String
+  
   restaurant      Restaurant    @relation(fields: [restaurantId], references: [id])
   restaurantId    String
-  totalAmount     Float
+
+  items           OrderItem[]
+
+  // --- Financial Snapshot ---
+  // We store these SEPARATELY so we know exactly what was charged at that moment
+  totalAmount     Float         
+  deliveryFee     Float         
+  
   status          OrderStatus   @default(PENDING)
   paymentStatus   PaymentStatus @default(PENDING)
+  
   deliveryAddress String
-  items           OrderItem[]
+  deliveryNotes   String?       
+
+  reference       String        @unique 
+  token           String?       @unique 
+
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
-  reference       String        @unique @default(uuid())
-  token           String        @unique
 }
 
 model OrderItem {
   id        String   @id @default(uuid())
-  order     Order    @relation(fields: [orderId], references: [id])
+  
+  order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
   orderId   String
-  menuItem  MenuItem @relation(fields: [menuItemId], references: [id])
-  menuItemId String
+
+  // --- Item Snapshot ---
+  // We copy the name here. If the restaurant renames "Jollof" to "Rice", 
+  // this old order will still say "Jollof".
+  menuItemName String  
+  menuItemId   String? // Optional: because the original item might be deleted later
+  
   quantity  Int
-  price     Float    // snapshot of price at the time
+  price     Float    // Price per unit AT THE TIME of order
 }
 
+// ================= ENUMS =================
+
 enum OrderStatus {
-  PENDING
-  CONFIRMED
+  PENDING          // Created, awaiting payment
   PREPARING
-  ON_THE_WAY
-  DELIVERED
-  CANCELLED
+  OUT_FOR_DELIVERY // Rider has picked up
+  DELIVERED        // Complete
 }
 
 enum PaymentStatus {
@@ -131,4 +174,5 @@ enum Role {
   CUSTOMER
   VENDOR
   ADMIN
+  RIDER 
 }

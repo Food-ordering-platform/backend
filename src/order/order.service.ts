@@ -4,10 +4,9 @@ import { randomBytes } from "crypto";
 
 const prisma = new PrismaClient();
 
-//Temporal Code
-// Generate a random 32-character token
-function generateToken(): string {
-  return randomBytes(16).toString("hex"); // 16 bytes = 32 hex characters
+// Helper to generate a unique reference
+function generateReference(): string {
+  return randomBytes(12).toString("hex");
 }
 
 export class OrderService {
@@ -22,43 +21,63 @@ export class OrderService {
     customerEmail: string
   ) {
 
-    //Temporal COde
-    // Generate unique token
-    let token = generateToken();
-    let tokenExists = true;
+    // 1. Fetch Restaurant to get the current Delivery Fee Snapshot
+    const restaurant = await prisma.restaurant.findUnique({
+      where: { id: restaurantId },
+    });
 
-    // Ensure token is unique (retry if collision)
-    while (tokenExists) {
-      const existing = await prisma.order.findUnique({ where: { token } });
-      if (!existing) {
-        tokenExists = false;
-      } else {
-        token = generateToken();
-      }
+    if (!restaurant) {
+      throw new Error("Restaurant not found");
     }
 
-    // 1️⃣ Create order in DB
+    // 2. Fetch Menu Items to get names for the Snapshot
+    const menuItemIds = items.map((item) => item.menuItemId);
+    const dbMenuItems = await prisma.menuItem.findMany({
+      where: { id: { in: menuItemIds } },
+    });
+
+    // Create a map for quick lookup: ID -> Item Data
+    const itemsMap = new Map(dbMenuItems.map((item) => [item.id, item]));
+
+    // 3. Generate a Unique Reference
+    let reference = generateReference();
+    let referenceExists = true;
+    while (referenceExists) {
+        const existing = await prisma.order.findUnique({ where: { reference } });
+        if (!existing) referenceExists = false;
+        else reference = generateReference();
+    }
+
+    // 4. Create order in DB with Snapshots and Reference
     const order = await prisma.order.create({
       data: {
         customerId,
         restaurantId,
         totalAmount,
+        deliveryFee: restaurant.deliveryFee, // <--- SNAPSHOT
         paymentStatus: "PENDING",
         status: "PENDING",
         deliveryAddress,
-        token,
+        reference, // <--- FIXED: Added required reference
         items: {
-          create: items.map((i) => ({
-            menuItemId: i.menuItemId,
-            quantity: i.quantity,
-            price: i.price,
-          })),
+          create: items.map((i) => {
+            const originalItem = itemsMap.get(i.menuItemId);
+            if (!originalItem) throw new Error(`Menu item ${i.menuItemId} not found`);
+
+            return {
+              // We only store the ID loosely now, no relation constraint
+              menuItemId: i.menuItemId,
+              menuItemName: originalItem.name, // <--- SNAPSHOT: Name
+              quantity: i.quantity,
+              price: i.price, 
+            };
+          }),
         },
       },
       include: { items: true },
     });
 
-    // 2️⃣ Initialize payment
+    // 5. Initialize payment
     const checkoutUrl = await PaymentService.initiatePayment(
       totalAmount,
       customerName,
@@ -76,19 +95,21 @@ export class OrderService {
       select: {
         id: true,
         reference: true,
-        token: true,
         totalAmount: true,
+        deliveryFee: true,
         paymentStatus: true,
         status: true,
-        restaurant: { select: { name: true } },
+        // We can still get the restaurant details via relation
+        restaurant: { select: { name: true, imageUrl: true } },
         items: {
           select: {
             quantity: true,
             price: true,
-            menuItem: { select: { name: true } },
+            menuItemName: true, // <--- Retrieve Snapshot Name
+            // FIXED: Removed 'menuItem' relation select because it no longer exists in OrderItem
           },
         },
-        // remove createdAt/updatedAt if you don't want them
+        createdAt: true,
       },
       orderBy: { createdAt: "desc" },
     });
@@ -98,49 +119,20 @@ export class OrderService {
     return prisma.order.findUnique({
       where: { reference },
       include: {
-        restaurant: { select: { name: true } },
-        items: {
-          select: {
-            quantity: true,
-            price: true,
-            menuItem: { select: { name: true } },
-          },
+        restaurant: { 
+          select: { 
+            name: true, 
+            address: true, 
+            phone: true 
+          } 
         },
-      },
-    });
-  }
-
-  //Temporal COde
-
-  // Get order by token (for restaurant dashboard and customer tracking)
-  static async getOrderByToken(token: string) {
-    return prisma.order.findUnique({
-      where: { token },
-      include: {
-        restaurant: { select: { name: true, address: true, phone: true } },
         items: {
           select: {
             quantity: true,
             price: true,
-            menuItem: { select: { name: true, description: true } },
-          },
-        },
-      },
-    });
-  }
-
-  // Update order status by token (for restaurant dashboard)
-  static async updateOrderStatusByToken(token: string, status: string) {
-    return prisma.order.update({
-      where: { token },
-      data: { status: status as any },
-      include: {
-        restaurant: { select: { name: true } },
-        items: {
-          select: {
-            quantity: true,
-            price: true,
-            menuItem: { select: { name: true } },
+            menuItemName: true,
+            menuItemId: true,
+            // FIXED: Removed 'menuItem' relation select
           },
         },
       },

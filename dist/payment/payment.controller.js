@@ -13,6 +13,8 @@ class PaymentController {
     static async initialize(req, res) {
         try {
             const { amount, email, name, customerId, restaurantId, items, deliveryAddress } = req.body;
+            // Generate a random token for this order
+            const token = crypto_1.default.randomBytes(16).toString("hex");
             const order = await prisma.order.create({
                 data: {
                     customerId,
@@ -21,6 +23,7 @@ class PaymentController {
                     paymentStatus: "PENDING",
                     status: "PENDING",
                     deliveryAddress,
+                    token, // ✅ include the generated token
                     items: { create: items },
                 },
                 include: { items: true },

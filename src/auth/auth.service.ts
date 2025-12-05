@@ -1,4 +1,3 @@
-// src/services/auth.service.ts
 import { PrismaClient } from "../../generated/prisma";
 import bcrypt from "bcryptjs";
 import { randomInt } from "crypto";
@@ -14,7 +13,7 @@ export class AuthService {
     name: string,
     email: string,
     password: string,
-    phone?: string,
+    phone: string, 
     role: "CUSTOMER" | "VENDOR" = "CUSTOMER"
   ) {
     const existingUser = await prisma.user.findUnique({ where: { email } });
@@ -42,7 +41,7 @@ export class AuthService {
         name,
         email,
         password: hashedPassword,
-        phone,
+        phone, // This is now required
         role,
         isVerified: false,
       },
@@ -51,13 +50,13 @@ export class AuthService {
     if (role === "VENDOR") {
       await prisma.restaurant.create({
         data: {
-          name,
+          name: `${name}'s Restaurant`, // Default name for now
           email,
           phone,
           address: "",
           ownerId: user.id,
-          deliveryTime: "30-40 mins",
-          deliveryFee: 0,
+          prepTime: 20, // Default prep time
+          deliveryFee: 500, // Default fee
           minimumOrder: 0,
           isOpen: false,
         },

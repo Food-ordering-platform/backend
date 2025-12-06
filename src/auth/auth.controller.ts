@@ -1,6 +1,8 @@
 import { Request, Response } from "express";
 import { AuthService } from "./auth.service";
 import { registerSchema, loginSchema } from "./auth.validator";
+import jwt from "jsonwebtoken";
+import { error } from "console";
 
 export class AuthController {
   // Register a new user (Customer or Vendor)
@@ -43,6 +45,31 @@ export class AuthController {
       });
     } catch (err: any) {
       return res.status(400).json({ error: err.message });
+    }
+  }
+
+  //Get current user (Validate Token)
+  static async getMe(req: Request, res: Response) {
+    try {
+      //1. Extracct token form authorization header
+      const authHeader = req.headers.authorization;
+      if (!authHeader || !authHeader.startsWith("Bearer")) {
+        throw new Error("No token Provided");
+      }
+      const token = authHeader.split(" ")[1];
+      // 2. Verify Token
+      const decoded = jwt.verify(token, process.env.JWT_SECRET as string) as {
+        userId: string;
+      };
+      // 3. Check if user still exists in DB
+      const user = await AuthService.getMe(decoded.userId);
+
+      return res.status(200).json({
+        message: "User Verified",
+        user,
+      });
+    } catch (err: any) {
+      res.status(401).json({ error: "Unauthorized: " + err.message });
     }
   }
 
@@ -93,7 +120,7 @@ export class AuthController {
   static async resetPassword(req: Request, res: Response) {
     try {
       const { token, newPassword, confirmPassword } = req.body;
-      if (!token || !newPassword ) {
+      if (!token || !newPassword) {
         throw new Error("All fields are required");
       }
 

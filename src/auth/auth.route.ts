@@ -9,6 +9,9 @@ router.post("/register", AuthController.register);
 // Login
 router.post("/login", AuthController.login);
 
+//Verify current user
+router.get("/me", AuthController.getMe)
+
 // Verify registration OTP
 router.post("/verify-otp", AuthController.verifyOtp);
 

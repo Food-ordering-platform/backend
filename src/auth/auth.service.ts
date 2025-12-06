@@ -96,6 +96,25 @@ export class AuthService {
     return { token, user };
   }
 
+  // -----------------GET CURRENT USER -----------------//
+  static async getMe(userId: string) {
+    const user = await prisma.user.findUnique({
+      where:{id:userId},
+      select:{
+        id: true,
+        name:true,
+        email:true,
+        role:true,
+        isVerified:true,
+        phone:true
+      }
+    })
+    if (!user){
+      throw new Error("User not found")
+    }
+    return user;
+  }
+
   // ------------------ OTP UTILS ------------------
   static async generateOtp(userId: string) {
     const code = randomInt(100000, 999999).toString();

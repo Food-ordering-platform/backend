@@ -84,43 +84,59 @@ export class RestaurantController {
     }
   }
 
+  //REMEMBER TO IMPLMENENT BACKEND VALIDATION WITH ZOD FOR MENUITEMS BEFORE SENDING TO DATABASE//
+
   // POST /restaurant/:id/menu
   static async addMenuItem(req: Request, res: Response) {
-    try {
-      const { id } = req.params;
+   try {
+      const { id } = req.params; // restaurantId
       const data = req.body;
 
+      // 1. Handle Image Upload (from middleware)
+      if (req.file) {
+        data.imageUrl = (req.file as any).path; // Cloudinary URL
+      }
+
+      // 2. Convert Price to Number (Multipart forms send numbers as strings)
+      if (data.price) {
+        data.price = parseFloat(data.price);
+      }
+
+      // 3. Pass to Service (Service handles category creation)
       const item = await RestaurantService.addMenuItem(id, data);
+
       res.status(201).json({
         success: true,
+        message: "Item added successfully",
         data: item,
       });
     } catch (err: any) {
       console.error("Error adding menu item:", err);
       res.status(500).json({
         success: false,
-        message: "Failed to add menu item",
+        message: err.message || "Failed to add menu item",
       });
     }
   }
 
   // PUT /menu/:id
   static async updateMenuItem(req: Request, res: Response) {
-    try {
+   try {
       const { id } = req.params;
       const data = req.body;
 
+      // Check if a new image was uploaded during update
+      if (req.file) {
+        data.imageUrl = (req.file as any).path;
+      }
+      if (data.price) {
+        data.price = parseFloat(data.price);
+      }
+
       const updated = await RestaurantService.updateMenuItem(id, data);
-      res.status(200).json({
-        success: true,
-        data: updated,
-      });
+      res.status(200).json({ success: true, data: updated });
     } catch (err: any) {
-      console.error("Error updating menu item:", err);
-      res.status(500).json({
-        success: false,
-        message: "Failed to update menu item",
-      });
+      res.status(500).json({ success: false, message: "Failed to update item" });
     }
   }
 
@@ -129,36 +145,20 @@ export class RestaurantController {
     try {
       const { id } = req.params;
       await RestaurantService.deleteMenuItem(id);
-
-      res.status(200).json({
-        success: true,
-        message: "Menu item deleted",
-      });
+      res.status(200).json({ success: true, message: "Deleted successfully" });
     } catch (err: any) {
-      console.error("Error deleting menu item:", err);
-      res.status(500).json({
-        success: false,
-        message: "Failed to delete menu item",
-      });
+      res.status(500).json({ success: false, message: "Failed to delete item" });
     }
   }
 
   // PATCH /menu/:id/toggle
   static async toggleMenuItemAvailability(req: Request, res: Response) {
-    try {
+   try {
       const { id } = req.params;
-
       const updated = await RestaurantService.toggleMenuItemAvailability(id);
-      res.status(200).json({
-        success: true,
-        data: updated,
-      });
+      res.status(200).json({ success: true, data: updated });
     } catch (err: any) {
-      console.error("Error toggling availability:", err);
-      res.status(500).json({
-        success: false,
-        message: "Failed to toggle menu item availability",
-      });
+      res.status(500).json({ success: false, message: "Failed to toggle status" });
     }
   }
 }

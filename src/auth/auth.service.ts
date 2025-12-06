@@ -77,7 +77,7 @@ export class AuthService {
 
   // ------------------ LOGIN ------------------
   static async login(email: string, password: string) {
-    const user = await prisma.user.findUnique({ where: { email } });
+    const user = await prisma.user.findUnique({ where: {email}, include:{restaurant: true}});
     if (!user) throw new Error("Invalid email address");
 
     const isValid = await bcrypt.compare(password, user.password);
@@ -92,7 +92,6 @@ export class AuthService {
       process.env.JWT_SECRET as string,
       { expiresIn: "7d" }
     );
-
     return { token, user };
   }
 

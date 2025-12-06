@@ -59,19 +59,60 @@ static async getRestaurantById(id: string) {
   // Get all menu items for a restaurant
   static async getMenuItems(restaurantId: string) {
     return await prisma.menuItem.findMany({
-      where: { restaurantId },
+      where: { restaurantId }, include:{category:true}
     });
   }
 
   // Add a new menu item
   static async addMenuItem(restaurantId: string, data: any) {
+    //1.Verify a restaurant exists
   const restaurant = await prisma.restaurant.findUnique({ where: { id: restaurantId } });
   if (!restaurant) throw new Error("Restaurant not found");
 
+  let categoryId = data.categoryId
+
+  //2.If a category name is provided, find it or create one
+  if(data.categoryName){
+    //Clean up the input, trim space
+    const cleanName = data.categoryName.trim();
+
+    const existingCategory = await prisma.menuCategory.findFirst({
+      where:{
+        restaurantId,
+        name:{
+          equals:cleanName,
+          mode:"insensitive"
+        },
+      },
+    })
+    if(existingCategory){
+      categoryId =  existingCategory.id
+    }
+    else{
+      //Create a new Category
+      const newCategory = await prisma.menuCategory.create({
+        data:{
+          name:cleanName,
+          restaurantId,
+        },
+      })
+      categoryId = newCategory.id
+    }
+  }
+
+  if(!categoryId){
+    throw new Error("Category is required")
+  }
+
   return await prisma.menuItem.create({
     data: {
-      ...data,
-      restaurantId,
+      name: data.name,
+        description: data.description,
+        price: data.price,     // Ensure this is a number before passing here
+        imageUrl: data.imageUrl,
+        available: true,       // Default to available
+        restaurantId,
+        categoryId,
     },
   });
 }

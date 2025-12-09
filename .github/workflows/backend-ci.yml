@@ -9,7 +9,7 @@ on:
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
-    
+
     steps:
     - uses: actions/checkout@v4
 
@@ -17,22 +17,16 @@ jobs:
       uses: actions/setup-node@v4
       with:
         node-version: '20'
-        # I REMOVED the cache lines here. The error will disappear.
 
-    - name: Check Folder Structure (Debugging)
+    # This step will show us exactly what files are in the root (for debugging)
+    - name: Debug Folder Structure
       run: ls -R
 
     - name: Install Dependencies
-      run: |
-        cd backend-main
-        npm install
+      run: npm install
 
-    - name: Run Build (TypeScript Check)
-      run: |
-        cd backend-main
-        npm run build
+    - name: Run Build
+      run: npm run build
 
     - name: Run Tests
-      run: |
-        cd backend-main
-        npm test
+      run: npm test

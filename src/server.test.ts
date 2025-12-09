@@ -1,16 +1,15 @@
-import { describe, it } from "node:test";
-import { strict as assert } from "node:assert";
+import request from "supertest";
+import app from "./app"; // Importing your actual app
 
 describe('Server Check', () => {
+    // Test 1: Simple Math (Just to be sure Jest works)
     it('should pass this simple test', () => {
         expect(1 + 1).toBe(2);
     });
-});
 
-function expect(value: number) {
-    return {
-        toBe: (expected: number) => {
-            assert.equal(value, expected);
-        }
-    };
-}
+    // Test 2: Actual Server Test (Checks if your app starts)
+    it('should return 404 for random page', async () => {
+        const res = await request(app).get('/random-url-that-does-not-exist');
+        expect(res.status).toBe(404); 
+    });
+});

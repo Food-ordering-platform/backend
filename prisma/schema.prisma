@@ -149,6 +149,7 @@ enum OrderStatus {
   PREPARING
   OUT_FOR_DELIVERY 
   DELIVERED
+  CANCELLED
 }
 
 enum PaymentStatus {

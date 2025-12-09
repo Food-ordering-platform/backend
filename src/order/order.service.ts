@@ -1,4 +1,4 @@
-import { PrismaClient } from "../../generated/prisma";
+import { OrderStatus, PrismaClient } from "../../generated/prisma";
 import { PaymentService } from "../payment/payment.service";
 import { randomBytes } from "crypto";
 
@@ -138,6 +138,46 @@ export class OrderService {
           },
         },
       },
+    });
+  }
+
+  //---------------------LOGIC FOR MOBILE VENDOR APP -------------------------------//
+
+  // 1️⃣ VENDOR DASHBOARD: Get all orders for the restaurant
+  static async getVendorOrders(restaurantId: string) {
+    return await prisma.order.findMany({
+      where: { restaurantId },
+      include: {
+        items: true,
+        customer: { select: { name: true, phone: true, address: true } }
+      },
+      orderBy: { createdAt: "desc" },
+    });
+  }
+
+  //2. UPDATE ORDER STATUS BASED ON VENDOR ACTIONS
+
+  static async updateOrderStatus(orderId: string, status: OrderStatus) {
+    const order = await prisma.order.findUnique({ where: { id: orderId } });
+    if (!order) throw new Error("Order not found");
+
+    let newPaymentStatus = order.paymentStatus;
+
+    // SAFETY NET: If Vendor Rejects (CANCELLED) & User Paid -> Auto Refund
+    if (status === "CANCELLED" && order.paymentStatus === "PAID") {
+      try {
+        console.log(`Auto-refunding Order ${order.reference}...`);
+        await PaymentService.refund(order.reference);
+        newPaymentStatus = "REFUNDED"; 
+      } catch (error) {
+        console.error("Refund failed. Admin intervention required.");
+      }
+    }
+    // Update Database
+    return await prisma.order.update({
+      where: { id: orderId },
+      data: { status, paymentStatus: newPaymentStatus },
+      include: { customer: true }
     });
   }
 }

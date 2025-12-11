@@ -28,12 +28,12 @@ export class AuthService {
         const token = jwt.sign(
           { userId: existingUser.id, role: existingUser.role },
           process.env.JWT_SECRET as string,
-          { expiresIn: "15m" }
+          { expiresIn: "30m" } // [CHANGED] Increased to 30 mins
         );
 
         return { user: existingUser, token };
       }
-      throw new Error("Email already in use");
+      throw new Error("This email is already registered. Please login.");
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
@@ -43,7 +43,7 @@ export class AuthService {
         name,
         email,
         password: hashedPassword,
-        phone, // This is now required
+        phone,
         role,
         isVerified: false,
       },
@@ -52,12 +52,12 @@ export class AuthService {
     if (role === "VENDOR") {
       await prisma.restaurant.create({
         data: {
-          name: `${name}'s Restaurant`, // Default name for now
+          name: `${name}'s Restaurant`,
           email,
           phone,
           address: "",
           ownerId: user.id,
-          prepTime: 20, // Default prep time
+          prepTime: 20,
           minimumOrder: 0,
           isOpen: false,
         },
@@ -69,7 +69,7 @@ export class AuthService {
     const token = jwt.sign(
       { userId: user.id, role: user.role },
       process.env.JWT_SECRET as string,
-      { expiresIn: "15m" }
+      { expiresIn: "30m" } // [CHANGED] Increased to 30 mins
     );
 
     await sendOtPEmail(user.email, code);
@@ -80,29 +80,23 @@ export class AuthService {
   // ------------------ LOGIN ------------------
   static async login(email: string, password: string) {
     const user = await prisma.user.findUnique({ where: {email}, include:{restaurant: true}});
-    if (!user) throw new Error("Invalid email address");
+    if (!user) throw new Error("We couldn't find an account with that email.");
 
-    // Check password
-    if (!user.password) throw new Error("Invalid password");
+    if (!user.password) throw new Error("Invalid credentials. Did you sign up with Google?");
     const isValid = await bcrypt.compare(password, user.password);
-    if (!isValid) throw new Error("Invalid password");
+    if (!isValid) throw new Error("Incorrect password. Please try again.");
 
-    // [MODIFIED] Handle Unverified Users gracefully
+    // Handle Unverified Users
     if (!user.isVerified) {
-      // 1. Generate a new OTP
       const code = await this.generateOtp(user.id);
-      
-      // 2. Send it
       await sendOtPEmail(user.email, code);
 
-      // 3. Create a temporary token (15 mins) for verification
       const tempToken = jwt.sign(
         { userId: user.id, role: user.role },
         process.env.JWT_SECRET as string,
-        { expiresIn: "15m" }
+        { expiresIn: "30m" } // [CHANGED] Increased to 30 mins
       );
 
-      // 4. Return a special object indicating verification is needed
       return { 
         requireOtp: true,
         token: tempToken,
@@ -110,7 +104,6 @@ export class AuthService {
       };
     }
 
-    // Standard Login (Verified Users)
     const token = jwt.sign(
       { userId: user.id, role: user.role },
       process.env.JWT_SECRET as string,
@@ -120,7 +113,6 @@ export class AuthService {
   }
 
   static async loginWithGoogle(token: string) {
-    // 1. Verify the token with Google
     const ticket = await googleClient.verifyIdToken({
       idToken: token,
       audience: process.env.GOOGLE_CLIENT_ID,
@@ -128,17 +120,15 @@ export class AuthService {
     const payload = ticket.getPayload();
 
     if (!payload || !payload.email) {
-      throw new Error("Invalid Google Token");
+      throw new Error("Unable to verify Google account.");
     }
 
     const { email, name, sub: googleId, picture } = payload;
 
-    // 2. Check if user exists
     let user = await prisma.user.findUnique({
       where: { email },
     });
 
-    // 3. If user doesn't exist, create them
     if (!user) {
       user = await prisma.user.create({
         data: {
@@ -146,13 +136,11 @@ export class AuthService {
           name: name || "Google User",
           googleId,
           avatar: picture,
-          isVerified: true, // Google emails are already verified
-          role: "CUSTOMER", // Default role
-          // Note: password and phone are null
+          isVerified: true, 
+          role: "CUSTOMER", 
         },
       });
     } else {
-      // Link Google ID if not already linked
       if (!user.googleId) {
         user = await prisma.user.update({
           where: { id: user.id },
@@ -161,7 +149,6 @@ export class AuthService {
       }
     }
 
-    // 4. Generate your platform's JWT
     const jwtToken = jwt.sign(
       { userId: user.id, role: user.role },
       process.env.JWT_SECRET as string,
@@ -171,7 +158,6 @@ export class AuthService {
     return { token: jwtToken, user };
   }
 
-  // -----------------GET CURRENT USER -----------------//
   static async getMe(userId: string) {
     const user = await prisma.user.findUnique({
       where:{id:userId},
@@ -185,7 +171,7 @@ export class AuthService {
       }
     })
     if (!user){
-      throw new Error("User not found")
+      throw new Error("User session not found. Please login again.")
     }
     return user;
   }
@@ -193,7 +179,8 @@ export class AuthService {
   // ------------------ OTP UTILS ------------------
   static async generateOtp(userId: string) {
     const code = randomInt(100000, 999999).toString();
-    const expiresAt = dayjs().add(10, "minute").toDate();
+    // [CHANGED] Increased OTP validity to 30 minutes
+    const expiresAt = dayjs().add(30, "minute").toDate();
 
     await prisma.otp.create({
       data: { code, userId, expiresAt },
@@ -219,7 +206,7 @@ export class AuthService {
         },
       });
  
-      if (!otp) throw new Error("Invalid or expired OTP");
+      if (!otp) throw new Error("The code you entered is invalid or has expired.");
 
       await prisma.otp.update({
         where: { id: otp.id },
@@ -231,12 +218,24 @@ export class AuthService {
         data: { isVerified: true },
       });
 
+      // [CRITICAL FIX] Generate the session token here!
+      // This was missing, causing the "Serialization" error on frontend
+      const sessionToken = jwt.sign(
+        { userId: user.id, role: user.role },
+        process.env.JWT_SECRET as string,
+        { expiresIn: "7d" }
+      );
+
       return {
         message: "Account Verified Successfully",
         user: { id: user.id, email: user.email, role: user.role },
+        token: sessionToken, // Return the token
       };
-    } catch {
-      throw new Error("Invalid or expired token");
+    } catch (error: any) {
+        if(error.message === "The code you entered is invalid or has expired."){
+            throw error;
+        }
+        throw new Error("Your session has expired. Please login again to get a new code.");
     }
   }
 
@@ -244,11 +243,12 @@ export class AuthService {
   static async forgotPassword(email: string) {
     const user = await prisma.user.findUnique({ where: { email } });
     if (!user) {
-      throw new Error("If account exists, OTP will be sent");
+      // User friendly: Don't reveal if user exists, but for now lets be helpful
+      throw new Error("We sent an OTP if this email exists."); 
     }
 
     const code = randomInt(100000, 999999).toString();
-    const expiresAt = dayjs().add(10, "minute").toDate();
+    const expiresAt = dayjs().add(30, "minute").toDate(); // [CHANGED] 30m
 
     await prisma.otp.create({
       data: { code, userId: user.id, expiresAt },
@@ -259,63 +259,45 @@ export class AuthService {
     const token = jwt.sign(
       { userId: user.id, purpose: "RESET_PASSWORD" },
       process.env.JWT_SECRET as string,
-      { expiresIn: "15m" }
+      { expiresIn: "30m" } // [CHANGED] 30m
     );
 
     return { message: "OTP sent to email", token };
   }
 
-  // ------------------ VERIFY FORGOT PASSWORD OTP ------------------
+  // ... rest of methods (verifyForgotPasswordOtp, resetPassword) 
+  // Ensure you update their error messages to be friendly too if you wish.
+  
   static async verifyForgotPasswordOtp(token: string, code: string) {
     try {
-      const payload = jwt.verify(
-        token,
-        process.env.JWT_SECRET as string
-      ) as { userId: string; purpose: string };
+      const payload = jwt.verify(token, process.env.JWT_SECRET as string) as { userId: string; purpose: string };
 
-      if (payload.purpose !== "RESET_PASSWORD") {
-        throw new Error("Invalid token purpose");
-      }
+      if (payload.purpose !== "RESET_PASSWORD") throw new Error("Invalid request type");
 
       const otp = await prisma.otp.findFirst({
-        where: {
-          userId: payload.userId,
-          code,
-          used: false,
-          expiresAt: { gt: new Date() },
-        },
+        where: { userId: payload.userId, code, used: false, expiresAt: { gt: new Date() } },
       });
 
-      if (!otp) throw new Error("Invalid or expired OTP");
+      if (!otp) throw new Error("Invalid or expired code.");
 
-      await prisma.otp.update({
-        where: { id: otp.id },
-        data: { used: true },
-      });
+      await prisma.otp.update({ where: { id: otp.id }, data: { used: true } });
 
       const resetToken = jwt.sign(
         { userId: payload.userId, purpose: "RESET_PASSWORD_FINAL" },
         process.env.JWT_SECRET as string,
-        { expiresIn: "15m" }
+        { expiresIn: "30m" }
       );
 
-      return { message: "OTP Verified. Use reset token.", resetToken };
+      return { message: "OTP Verified.", resetToken };
     } catch {
-      throw new Error("Invalid or expired OTP");
+      throw new Error("Invalid or expired session.");
     }
   }
 
-  // ------------------ RESET PASSWORD ------------------
   static async resetPassword(resetToken: string, newPassword: string) {
     try {
-      const payload = jwt.verify(
-        resetToken,
-        process.env.JWT_SECRET as string
-      ) as { userId: string; purpose: string };
-
-      if (payload.purpose !== "RESET_PASSWORD_FINAL") {
-        throw new Error("Invalid token purpose");
-      }
+      const payload = jwt.verify(resetToken, process.env.JWT_SECRET as string) as { userId: string; purpose: string };
+      if (payload.purpose !== "RESET_PASSWORD_FINAL") throw new Error("Invalid request");
 
       const hashedPassword = await bcrypt.hash(newPassword, 10);
 
@@ -326,7 +308,7 @@ export class AuthService {
 
       return { message: "Password reset successful" };
     } catch {
-      throw new Error("Invalid or expired reset token");
+      throw new Error("Your session expired. Please start the password reset process again.");
     }
   }
 }

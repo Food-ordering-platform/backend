@@ -47,6 +47,23 @@ export class AuthController {
       return res.status(400).json({ error: err.message });
     }
   }
+  
+  // Google Login
+  static async googleLogin(req: Request, res: Response) {
+    try {
+      const { token } = req.body;
+      if (!token) throw new Error("Google token is required");
+
+      const result = await AuthService.loginWithGoogle(token);
+
+      return res.status(200).json({
+        message: "Google login successful",
+        result,
+      });
+    } catch (err: any) {
+      return res.status(400).json({ error: err.message });
+    }
+  }
 
   //Get current user (Validate Token)
   static async getMe(req: Request, res: Response) {

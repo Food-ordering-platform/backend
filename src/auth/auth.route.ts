@@ -9,6 +9,8 @@ router.post("/register", AuthController.register);
 // Login
 router.post("/login", AuthController.login);
 
+router.post("/google", AuthController.googleLogin);
+
 //Verify current user
 router.get("/me", AuthController.getMe)
 

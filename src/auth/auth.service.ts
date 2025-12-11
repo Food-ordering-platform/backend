@@ -1,11 +1,13 @@
 import { PrismaClient } from "../../generated/prisma";
 import bcrypt from "bcryptjs";
+import {OAuth2Client} from "google-auth-library"
 import { randomInt } from "crypto";
 import jwt from "jsonwebtoken";
 import dayjs from "dayjs";
 import { sendOtPEmail } from "../utils/mailer";
 
 const prisma = new PrismaClient();
+const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID)
 
 export class AuthService {
   // ------------------ REGISTER ------------------
@@ -80,6 +82,7 @@ export class AuthService {
     const user = await prisma.user.findUnique({ where: {email}, include:{restaurant: true}});
     if (!user) throw new Error("Invalid email address");
 
+    if (!user.password) throw new Error("Invalid password");
     const isValid = await bcrypt.compare(password, user.password);
     if (!isValid) throw new Error("Invalid password");
 
@@ -93,6 +96,58 @@ export class AuthService {
       { expiresIn: "7d" }
     );
     return { token, user };
+  }
+
+  static async loginWithGoogle(token: string) {
+    // 1. Verify the token with Google
+    const ticket = await googleClient.verifyIdToken({
+      idToken: token,
+      audience: process.env.GOOGLE_CLIENT_ID,
+    });
+    const payload = ticket.getPayload();
+
+    if (!payload || !payload.email) {
+      throw new Error("Invalid Google Token");
+    }
+
+    const { email, name, sub: googleId, picture } = payload;
+
+    // 2. Check if user exists
+    let user = await prisma.user.findUnique({
+      where: { email },
+    });
+
+    // 3. If user doesn't exist, create them
+    if (!user) {
+      user = await prisma.user.create({
+        data: {
+          email,
+          name: name || "Google User",
+          googleId,
+          avatar: picture,
+          isVerified: true, // Google emails are already verified
+          role: "CUSTOMER", // Default role
+          // Note: password and phone are null
+        },
+      });
+    } else {
+      // Link Google ID if not already linked
+      if (!user.googleId) {
+        user = await prisma.user.update({
+          where: { id: user.id },
+          data: { googleId, avatar: picture || user.avatar },
+        });
+      }
+    }
+
+    // 4. Generate your platform's JWT
+    const jwtToken = jwt.sign(
+      { userId: user.id, role: user.role },
+      process.env.JWT_SECRET as string,
+      { expiresIn: "7d" }
+    );
+
+    return { token: jwtToken, user };
   }
 
   // -----------------GET CURRENT USER -----------------//

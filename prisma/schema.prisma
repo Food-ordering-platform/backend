@@ -16,14 +16,17 @@ model User {
   id          String       @id @default(uuid())
   name        String
   email       String       @unique
-  password    String
-  phone       String       // Required
+  password    String?       //Made it optional to alloow google auth users
+  phone       String?       //Made it optional to alloow google auth users
   address     String?      
   role        Role         @default(CUSTOMER)
   
   restaurant  Restaurant?  @relation("RestaurantOwner") 
   orders      Order[]      @relation("CustomerOrders")
   otp         Otp[]
+
+  googleId    String?      @unique // [Add] To link Google accounts reliably
+  avatar      String?      //Good for professional profile feel
 
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
@@ -61,7 +64,7 @@ model Restaurant {
   isOpen       Boolean       @default(false)
   
   // Vendor sets only Prep Time.
-  // Delivery Fee is removed because YOU (Platform) control it globally.
+  // Delivery Fee is removed because it's now calculated based on distance.
   prepTime     Int           @default(20) 
   minimumOrder Float         @default(0.0) // Can keep this if vendors want to enforce minimums
 

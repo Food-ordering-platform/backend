@@ -82,14 +82,35 @@ export class AuthService {
     const user = await prisma.user.findUnique({ where: {email}, include:{restaurant: true}});
     if (!user) throw new Error("Invalid email address");
 
+    // Check password
     if (!user.password) throw new Error("Invalid password");
     const isValid = await bcrypt.compare(password, user.password);
     if (!isValid) throw new Error("Invalid password");
 
+    // [MODIFIED] Handle Unverified Users gracefully
     if (!user.isVerified) {
-      throw new Error("Please verify your account with the OTP first.");
+      // 1. Generate a new OTP
+      const code = await this.generateOtp(user.id);
+      
+      // 2. Send it
+      await sendOtPEmail(user.email, code);
+
+      // 3. Create a temporary token (15 mins) for verification
+      const tempToken = jwt.sign(
+        { userId: user.id, role: user.role },
+        process.env.JWT_SECRET as string,
+        { expiresIn: "15m" }
+      );
+
+      // 4. Return a special object indicating verification is needed
+      return { 
+        requireOtp: true,
+        token: tempToken,
+        user 
+      };
     }
 
+    // Standard Login (Verified Users)
     const token = jwt.sign(
       { userId: user.id, role: user.role },
       process.env.JWT_SECRET as string,

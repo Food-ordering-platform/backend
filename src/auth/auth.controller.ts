@@ -34,10 +34,24 @@ export class AuthController {
   }
 
   // Login a user
-  static async login(req: Request, res: Response) {
+ static async login(req: Request, res: Response) {
     try {
       const data = loginSchema.parse(req.body);
       const result = await AuthService.login(data.email, data.password);
+
+      // [MODIFIED] Check if OTP is required
+      if (result.requireOtp) {
+        return res.status(200).json({
+          message: "Account not verified. OTP sent.",
+          requireOtp: true, // Frontend checks this
+          token: result.token,
+          user: {
+            id: result.user.id,
+            email: result.user.email,
+            role: result.user.role,
+          },
+        });
+      }
 
       return res.status(200).json({
         message: "Login successful",

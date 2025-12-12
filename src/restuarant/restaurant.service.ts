@@ -3,6 +3,24 @@ import { PrismaClient } from "../../generated/prisma";
 const prisma = new PrismaClient();
 
 export class RestaurantService {
+  //Create Restaurat
+  static async createRestaurant(ownerId: string, data:any){
+    //Check if user already has a restaurant
+    const existing  = await prisma.restaurant.findUnique({where:{ownerId}})
+    if(existing){
+      throw new Error("You already have a restaurant")
+    }
+    return await prisma.restaurant.create({
+      data:{
+        ...data,
+        ownerId,
+        minimumOrder: data.minimumOrder || 0.0,
+        isOpen: data.isOpen || true,
+        
+      }
+    })
+  }
+
   // Get all restaurants
   static async getAllRestaurant() {
     return await prisma.restaurant.findMany({

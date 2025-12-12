@@ -49,27 +49,27 @@ export class AuthService {
       },
     });
 
-    if (role === "VENDOR") {
-      await prisma.restaurant.create({
-        data: {
-          name: `${name}'s Restaurant`,
-          email,
-          phone,
-          address: "",
-          ownerId: user.id,
-          prepTime: 20,
-          minimumOrder: 0,
-          isOpen: false,
-        },
-      });
-    }
+    // if (role === "VENDOR") {
+    //   await prisma.restaurant.create({
+    //     data: {
+    //       name: `${name}'s Restaurant`,
+    //       email,
+    //       phone,
+    //       address: "",
+    //       ownerId: user.id,
+    //       prepTime: 20,
+    //       minimumOrder: 0,
+    //       isOpen: false,
+    //     },
+    //   });
+    // }
 
     const code = await this.generateOtp(user.id);
 
     const token = jwt.sign(
       { userId: user.id, role: user.role },
       process.env.JWT_SECRET as string,
-      { expiresIn: "30m" } // [CHANGED] Increased to 30 mins
+      { expiresIn: "30m" } // 
     );
 
     await sendOtPEmail(user.email, code);

@@ -1,7 +1,36 @@
 import { Request, Response } from "express";
 import { RestaurantService } from "./restaurant.service";
+import jwt from "jsonwebtoken";
+import { strict } from "assert";
+import { success } from "zod";
 
 export class RestaurantController {
+  //Create Restaurant
+  static async createRestaurant(req:Request, res:Response){
+    try{
+      const authHeader = req.headers.authorization
+      if(!authHeader) throw new Error("No token Provided");
+      const token = authHeader.split(" ")[1]
+      const decoded: any = jwt.verify(token, process.env.JWT_SECRET as string)
+
+      const ownerId = decoded.userId;
+      const data = req.body;
+      const restaurant = await RestaurantService.createRestaurant(ownerId, data);
+
+      res.status(201).json({
+        success:true,
+        message:"Restaurant Profile Created  Successfully",
+        data:restaurant
+      })
+    }
+    catch(err: any){
+      console.error("Error Creating Restaurant:", err)
+      res.status(400).json({
+        success:false,
+        message:err.message || "Failed to create restaurant"
+      })
+    }
+  }
   // GET /restaurant
   static async getAllRestaurants(req: Request, res: Response) {
     try {

@@ -7,23 +7,23 @@ const router = Router();
 // Restaurant
 router.get("/", RestaurantController.getAllRestaurants);
 router.get("/:id", RestaurantController.getRestaurantById);
-router.put("/:id", RestaurantController.updateRestaurant);
 
 // Menu Management
 router.get("/:id/menu", RestaurantController.getMenuItems);
 router.post(
   "/:id/menu", 
-  upload.single("image"), // "image" must match the name in your FormData on frontend
+  upload.single("image"), 
   RestaurantController.addMenuItem
 );
-//Update restaurant
+
+// ✅ KEEP THIS ONE (It has the upload middleware)
 router.put(
   "/:id", 
   upload.single("image"), 
   RestaurantController.updateRestaurant
 );
 
-// Create Restaurant (Add upload.single)
+// Create Restaurant
 router.post(
   "/", 
   upload.single("image"), 

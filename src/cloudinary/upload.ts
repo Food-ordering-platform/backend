@@ -1,27 +1,25 @@
 // food-ordering-platform/backend/backend-main/src/cloudinary/upload.ts
-import { v2 as cloudinary } from "cloudinary";
+import cloudinary from "./index"; // [FIX] Import the CONFIGURED instance
 import { Readable } from "stream";
-import "./index"; // Ensure configuration is loaded
 
 export async function uploadToCloudinary(file: Express.Multer.File, folder = "restaurant-menu"): Promise<any> {
   return new Promise((resolve, reject) => {
+    // Use the imported 'cloudinary' which we know has the config
     const uploadStream = cloudinary.uploader.upload_stream(
       {
         folder: folder,
         resource_type: "auto",
-        // [CRITICAL FIX] Removed 'transformation' array.
-        // This was causing the "Invalid Signature" error.
-        // Apply optimizations (q_auto, f_auto) in your Frontend <Image /> source instead.
+        // No transformations here (Best Practice)
       },
       (error, result) => {
         if (error) {
+          console.error("❌ Cloudinary Upload Error:", error);
           return reject(error);
         }
         resolve(result);
       }
     );
 
-    // Pipe the buffer to Cloudinary
     const stream = Readable.from(file.buffer);
     stream.pipe(uploadStream);
   });

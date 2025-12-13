@@ -1,21 +1,37 @@
 import { PrismaClient } from "../../generated/prisma";
+import { uploadToCloudinary } from "../cloudinary/upload";
 
 const prisma = new PrismaClient();
 
 export class RestaurantService {
   // Create Restaurant
-  static async createRestaurant(ownerId: string, data: any) {
-    // Check if user already has a restaurant
+ // Create Restaurant with File Handling
+  static async createRestaurant(ownerId: string, data: any, file?: Express.Multer.File) {
+    // 1. Check existence
     const existing = await prisma.restaurant.findUnique({ where: { ownerId } });
     if (existing) {
       throw new Error("You already have a restaurant");
     }
-    
+
+    // 2. Handle File Upload (Ticketer Strategy)
+    let imageUrl = undefined;
+    if (file) {
+      // Use your Cloudinary helper here. 
+      // This ensures we get a secure URL back before saving to DB.
+      const uploadResult = await uploadToCloudinary(file); 
+      imageUrl = uploadResult.secure_url || uploadResult.url; 
+    }
+
+    // 3. Create in DB
     return await prisma.restaurant.create({
       data: {
-        ...data,
         ownerId,
-        // [FIX] Use ?? (Nullish Coalescing) to allow 0 or false values
+        name: data.name,
+        address: data.address,
+        phone: data.phone,
+        email: data.email,
+        imageUrl: imageUrl, // Save the URL
+        prepTime: data.prepTime || 20,
         minimumOrder: data.minimumOrder ?? 0.0,
         isOpen: data.isOpen ?? true,
       },
@@ -65,7 +81,7 @@ export class RestaurantService {
   }
 
   // Update restaurant info
-  static async updateRestaurant(id: string, data: any) {
+  static async updateRestaurant(id: string, data: any, file: Express.Multer.File | undefined) {
     return await prisma.restaurant.update({
       where: { id },
       data,

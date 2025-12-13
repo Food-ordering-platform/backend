@@ -3,7 +3,21 @@ import { RestaurantService } from "./restaurant.service";
 import jwt from "jsonwebtoken";
 
 export class RestaurantController {
+  private static parseRestaurantBody(body: any) {
+    return {
+      name: body.name,
+      address: body.address,
+      phone: body.phone,
+      email: body.email,
+      // Parse numbers safely
+      prepTime: body.prepTime ? parseInt(body.prepTime, 10) : undefined,
+      minimumOrder: body.minimumOrder ? parseFloat(body.minimumOrder) : undefined,
+      // Parse booleans from "true"/"false" strings
+      isOpen: body.isOpen === 'true' || body.isOpen === true,
+    };
+  }
   // Create Restaurant
+  // POST /restaurant
   static async createRestaurant(req: Request, res: Response) {
     try {
       const authHeader = req.headers.authorization;
@@ -12,33 +26,16 @@ export class RestaurantController {
       const decoded: any = jwt.verify(token, process.env.JWT_SECRET as string);
 
       const ownerId = decoded.userId;
-      const data = req.body;
 
-      // [FIX] Handle Image
-      if (req.file) {
-        data.imageUrl = (req.file as any).path;
-      }
-
-      // [FIX] Convert FormData strings to correct types securely
-      if (data.prepTime !== undefined && data.prepTime !== "") {
-        const parsed = parseInt(data.prepTime);
-        if (!isNaN(parsed)) data.prepTime = parsed;
-        else delete data.prepTime;
-      }
-
-      if (data.minimumOrder !== undefined && data.minimumOrder !== "") {
-        const parsed = parseFloat(data.minimumOrder);
-        if (!isNaN(parsed)) data.minimumOrder = parsed;
-        else delete data.minimumOrder;
-      }
-
-      // Handle "true"/"false" strings from FormData
-      if (data.isOpen === "true") data.isOpen = true;
-      if (data.isOpen === "false") data.isOpen = false;
-
+      // 1. Clean Parse using helper
+      const restaurantData = RestaurantController.parseRestaurantBody(req.body);
+      
+      // 2. Pass Data AND File to Service (Ticketer Strategy)
+      // We do not rely on middleware to populate 'path' here; the service will handle upload
       const restaurant = await RestaurantService.createRestaurant(
         ownerId,
-        data
+        restaurantData,
+        req.file // Pass the raw file object
       );
 
       res.status(201).json({
@@ -54,7 +51,6 @@ export class RestaurantController {
       });
     }
   }
-
   // GET /restaurant
   static async getAllRestaurants(req: Request, res: Response) {
     try {
@@ -99,59 +95,44 @@ export class RestaurantController {
   }
 
   // PUT /restaurant/:id
-  // Update restaurant
+  // PUT /restaurant/:id
   static async updateRestaurant(req: Request, res: Response) {
     try {
       const { id } = req.params;
-      const data = req.body;
-
-      // 1. [SECURITY] Verify Ownership
+      
+      // Auth Check
       const authHeader = req.headers.authorization;
-      if (!authHeader)
-        return res.status(401).json({ message: "No token provided" });
+      if (!authHeader) return res.status(401).json({ message: "No token provided" });
       const token = authHeader.split(" ")[1];
       const decoded: any = jwt.verify(token, process.env.JWT_SECRET as string);
       const userId = decoded.userId;
 
+      // Ownership Check
       const existingRestaurant = await RestaurantService.getRestaurantById(id);
       if (!existingRestaurant) {
-        return res
-          .status(404)
-          .json({ success: false, message: "Restaurant not found" });
+        return res.status(404).json({ success: false, message: "Restaurant not found" });
       }
-
       if (existingRestaurant.ownerId !== userId) {
-        return res.status(403).json({
-          success: false,
-          message: "Unauthorized: You do not own this restaurant",
-        });
+        return res.status(403).json({ success: false, message: "Unauthorized" });
       }
 
-      // 2. Handle Image
-      if (req.file) {
-        data.imageUrl = (req.file as any).path;
-      }
+      // 1. Clean Parse
+      const restaurantData = RestaurantController.parseRestaurantBody(req.body);
 
-      // [FIX] DELETE THE RAW IMAGE FIELD SO PRISMA DOESN'T COMPLAIN
-      delete data.image;
+      // 2. Pass Data AND File to Service
+      const updated = await RestaurantService.updateRestaurant(
+        id, 
+        restaurantData,
+        req.file
+      );
 
-      // 3. [FIX] PARSE DATA ROBUSTLY
-      // Handle prepTime
-      if (data.prepTime !== undefined && data.prepTime !== null) {
-        const parsed = parseInt(data.prepTime);
-        if (isNaN(parsed)) {
-          delete data.prepTime;
-        } else {
-          data.prepTime = parsed;
-        }
-      }
-
-      // ... (rest of your existing logic for minimumOrder and isOpen) ...
-
-      const updated = await RestaurantService.updateRestaurant(id, data);
       res.status(200).json({ success: true, data: updated });
     } catch (err: any) {
-      // ... (rest of your error handling) ...
+      console.error("Error Updating Restaurant:", err);
+      res.status(500).json({
+        success: false,
+        message: err.message || "Failed to update restaurant",
+      });
     }
   }
 

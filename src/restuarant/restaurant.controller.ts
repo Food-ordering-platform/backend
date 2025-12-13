@@ -96,27 +96,24 @@ export class RestaurantController {
       const { id } = req.params;
       const data = req.body;
 
-      // [FIX] Handle Image
+      // 1. Handle Image
       if (req.file) {
         data.imageUrl = (req.file as any).path;
       }
 
-      // [FIX] Convert types
-      if (data.prepTime) data.prepTime = parseInt(data.prepTime);
-      if (data.isOpen === "true") data.isOpen = true;
-      if (data.isOpen === "false") data.isOpen = false;
+      // 2. PARSE DATA (Crucial!)
+      if (data.prepTime) data.prepTime = parseInt(data.prepTime); // String -> Int
+      if (data.minimumOrder) data.minimumOrder = parseFloat(data.minimumOrder);
+      
+      // Handle "true"/"false" strings from FormData
+      if (data.isOpen === 'true') data.isOpen = true;
+      if (data.isOpen === 'false') data.isOpen = false;
 
       const updated = await RestaurantService.updateRestaurant(id, data);
-      res.status(200).json({
-        success: true,
-        data: updated,
-      });
+      res.status(200).json({ success: true, data: updated });
     } catch (err: any) {
-      console.error("Error updating restaurant:", err);
-      res.status(500).json({
-        success: false,
-        message: "Failed to update restaurant",
-      });
+      console.error("Update Error:", err); // Log the real error to your server console!
+      res.status(500).json({ success: false, message: "Failed to update restaurant" });
     }
   }
 

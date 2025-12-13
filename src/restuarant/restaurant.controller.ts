@@ -80,6 +80,19 @@ export class RestaurantController {
       const { id } = req.params;
       const data = req.body;
 
+      // [FIX] Handle Image Upload
+      if (req.file) {
+        data.imageUrl = (req.file as any).path; // Cloudinary URL
+      }
+
+      // Handle Boolean conversion (FormData sends booleans as strings "true"/"false")
+      if (typeof data.isOpen === 'string') {
+        data.isOpen = data.isOpen === 'true';
+      }
+      if (data.prepTime) {
+        data.prepTime = parseInt(data.prepTime);
+      }
+
       const updated = await RestaurantService.updateRestaurant(id, data);
       res.status(200).json({
         success: true,

@@ -5,8 +5,12 @@ const prisma = new PrismaClient();
 
 export class RestaurantService {
   // Create Restaurant
- // Create Restaurant with File Handling
-  static async createRestaurant(ownerId: string, data: any, file?: Express.Multer.File) {
+  // Create Restaurant with File Handling
+  static async createRestaurant(
+    ownerId: string,
+    data: any,
+    file?: Express.Multer.File
+  ) {
     // 1. Check existence
     const existing = await prisma.restaurant.findUnique({ where: { ownerId } });
     if (existing) {
@@ -16,10 +20,10 @@ export class RestaurantService {
     // 2. Handle File Upload (Ticketer Strategy)
     let imageUrl = undefined;
     if (file) {
-      // Use your Cloudinary helper here. 
+      // Use your Cloudinary helper here.
       // This ensures we get a secure URL back before saving to DB.
-      const uploadResult = await uploadToCloudinary(file); 
-      imageUrl = uploadResult.secure_url || uploadResult.url; 
+      const uploadResult = await uploadToCloudinary(file);
+      imageUrl = uploadResult.secure_url || uploadResult.url;
     }
 
     // 3. Create in DB
@@ -81,10 +85,31 @@ export class RestaurantService {
   }
 
   // Update restaurant info
-  static async updateRestaurant(id: string, data: any, file: Express.Multer.File | undefined) {
+  // Update restaurant info
+  static async updateRestaurant(
+    id: string,
+    data: any,
+    file: Express.Multer.File | undefined
+  ) {
+    // 1. Handle File Upload if provided
+    let imageUrl = undefined;
+    if (file) {
+      // ✅ Upload to Cloudinary
+      const uploadResult = await uploadToCloudinary(file);
+      imageUrl = uploadResult.secure_url || uploadResult.url;
+    }
+
+    // 2. Prepare Update Data
+    const updateData = { ...data };
+
+    // Only update the image URL if a new one was uploaded
+    if (imageUrl) {
+      updateData.imageUrl = imageUrl;
+    }
+
     return await prisma.restaurant.update({
       where: { id },
-      data,
+      data: updateData,
     });
   }
 

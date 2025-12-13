@@ -11,9 +11,11 @@ export class RestaurantController {
       email: body.email,
       // Parse numbers safely
       prepTime: body.prepTime ? parseInt(body.prepTime, 10) : undefined,
-      minimumOrder: body.minimumOrder ? parseFloat(body.minimumOrder) : undefined,
+      minimumOrder: body.minimumOrder
+        ? parseFloat(body.minimumOrder)
+        : undefined,
       // Parse booleans from "true"/"false" strings
-      isOpen: body.isOpen === 'true' || body.isOpen === true,
+      isOpen: body.isOpen === "true" || body.isOpen === true,
     };
   }
   // Create Restaurant
@@ -29,7 +31,7 @@ export class RestaurantController {
 
       // 1. Clean Parse using helper
       const restaurantData = RestaurantController.parseRestaurantBody(req.body);
-      
+
       // 2. Pass Data AND File to Service (Ticketer Strategy)
       // We do not rely on middleware to populate 'path' here; the service will handle upload
       const restaurant = await RestaurantService.createRestaurant(
@@ -99,10 +101,11 @@ export class RestaurantController {
   static async updateRestaurant(req: Request, res: Response) {
     try {
       const { id } = req.params;
-      
+
       // Auth Check
       const authHeader = req.headers.authorization;
-      if (!authHeader) return res.status(401).json({ message: "No token provided" });
+      if (!authHeader)
+        return res.status(401).json({ message: "No token provided" });
       const token = authHeader.split(" ")[1];
       const decoded: any = jwt.verify(token, process.env.JWT_SECRET as string);
       const userId = decoded.userId;
@@ -110,10 +113,14 @@ export class RestaurantController {
       // Ownership Check
       const existingRestaurant = await RestaurantService.getRestaurantById(id);
       if (!existingRestaurant) {
-        return res.status(404).json({ success: false, message: "Restaurant not found" });
+        return res
+          .status(404)
+          .json({ success: false, message: "Restaurant not found" });
       }
       if (existingRestaurant.ownerId !== userId) {
-        return res.status(403).json({ success: false, message: "Unauthorized" });
+        return res
+          .status(403)
+          .json({ success: false, message: "Unauthorized" });
       }
 
       // 1. Clean Parse
@@ -121,14 +128,14 @@ export class RestaurantController {
 
       // 2. Pass Data AND File to Service
       const updated = await RestaurantService.updateRestaurant(
-        id, 
+        id,
         restaurantData,
-        req.file
+        req.file // ✅ Pass the memory file object
       );
 
       res.status(200).json({ success: true, data: updated });
     } catch (err: any) {
-      console.error("Error Updating Restaurant:", err);
+      console.error("Error Updating Restaurant:", err); // Check Railway Logs for this!
       res.status(500).json({
         success: false,
         message: err.message || "Failed to update restaurant",

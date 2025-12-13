@@ -107,20 +107,23 @@ export class RestaurantController {
 
       // 1. [SECURITY] Verify Ownership
       const authHeader = req.headers.authorization;
-      if (!authHeader) return res.status(401).json({ message: "No token provided" });
+      if (!authHeader)
+        return res.status(401).json({ message: "No token provided" });
       const token = authHeader.split(" ")[1];
       const decoded: any = jwt.verify(token, process.env.JWT_SECRET as string);
       const userId = decoded.userId;
 
       const existingRestaurant = await RestaurantService.getRestaurantById(id);
       if (!existingRestaurant) {
-        return res.status(404).json({ success: false, message: "Restaurant not found" });
+        return res
+          .status(404)
+          .json({ success: false, message: "Restaurant not found" });
       }
 
       if (existingRestaurant.ownerId !== userId) {
-        return res.status(403).json({ 
-            success: false, 
-            message: "Unauthorized: You do not own this restaurant" 
+        return res.status(403).json({
+          success: false,
+          message: "Unauthorized: You do not own this restaurant",
         });
       }
 
@@ -129,47 +132,26 @@ export class RestaurantController {
         data.imageUrl = (req.file as any).path;
       }
 
+      // [FIX] DELETE THE RAW IMAGE FIELD SO PRISMA DOESN'T COMPLAIN
+      delete data.image;
+
       // 3. [FIX] PARSE DATA ROBUSTLY
-      // Handle prepTime: only parse if it's a valid string, otherwise delete to ignore
+      // Handle prepTime
       if (data.prepTime !== undefined && data.prepTime !== null) {
         const parsed = parseInt(data.prepTime);
         if (isNaN(parsed)) {
-            delete data.prepTime; // Remove invalid/empty string so Prisma ignores it
+          delete data.prepTime;
         } else {
-            data.prepTime = parsed;
+          data.prepTime = parsed;
         }
       }
 
-      // Handle minimumOrder
-      if (data.minimumOrder !== undefined && data.minimumOrder !== null) {
-        const parsed = parseFloat(data.minimumOrder);
-        if (isNaN(parsed)) {
-            delete data.minimumOrder;
-        } else {
-            data.minimumOrder = parsed;
-        }
-      }
-      
-      // Handle "true"/"false" strings from FormData
-      if (data.isOpen === 'true') data.isOpen = true;
-      if (data.isOpen === 'false') data.isOpen = false;
-      
-      // [FIX] Ensure isOpen is strictly boolean or undefined
-      if (typeof data.isOpen !== 'boolean' && data.isOpen !== undefined) {
-         delete data.isOpen; 
-      }
+      // ... (rest of your existing logic for minimumOrder and isOpen) ...
 
       const updated = await RestaurantService.updateRestaurant(id, data);
       res.status(200).json({ success: true, data: updated });
-
     } catch (err: any) {
-      // [FIX] Handle Unique Email Error
-      if (err.code === 'P2002' && err.meta?.target?.includes('email')) {
-          return res.status(409).json({ success: false, message: "Email is already taken by another restaurant" });
-      }
-
-      console.error("Update Error:", err); 
-      res.status(500).json({ success: false, message: "Failed to update restaurant" });
+      // ... (rest of your error handling) ...
     }
   }
 

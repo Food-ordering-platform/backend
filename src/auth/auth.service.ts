@@ -1,3 +1,5 @@
+// food-ordering-platform/backend/backend-main/src/auth/auth.service.ts
+
 import { PrismaClient } from "../../generated/prisma";
 import bcrypt from "bcryptjs";
 import {OAuth2Client} from "google-auth-library"
@@ -28,7 +30,7 @@ export class AuthService {
         const token = jwt.sign(
           { userId: existingUser.id, role: existingUser.role },
           process.env.JWT_SECRET as string,
-          { expiresIn: "30m" } // [CHANGED] Increased to 30 mins
+          { expiresIn: "30m" } 
         );
 
         return { user: existingUser, token };
@@ -49,27 +51,12 @@ export class AuthService {
       },
     });
 
-    // if (role === "VENDOR") {
-    //   await prisma.restaurant.create({
-    //     data: {
-    //       name: `${name}'s Restaurant`,
-    //       email,
-    //       phone,
-    //       address: "",
-    //       ownerId: user.id,
-    //       prepTime: 20,
-    //       minimumOrder: 0,
-    //       isOpen: false,
-    //     },
-    //   });
-    // }
-
     const code = await this.generateOtp(user.id);
 
     const token = jwt.sign(
       { userId: user.id, role: user.role },
       process.env.JWT_SECRET as string,
-      { expiresIn: "30m" } // 
+      { expiresIn: "30m" } 
     );
 
     await sendOtPEmail(user.email, code);
@@ -94,7 +81,7 @@ export class AuthService {
       const tempToken = jwt.sign(
         { userId: user.id, role: user.role },
         process.env.JWT_SECRET as string,
-        { expiresIn: "30m" } // [CHANGED] Increased to 30 mins
+        { expiresIn: "30m" } 
       );
 
       return { 
@@ -167,7 +154,9 @@ export class AuthService {
         email:true,
         role:true,
         isVerified:true,
-        phone:true
+        phone:true,
+        // [FIX] Included restaurant relation here so frontend receives the ID
+        restaurant: true
       }
     })
     if (!user){
@@ -179,7 +168,6 @@ export class AuthService {
   // ------------------ OTP UTILS ------------------
   static async generateOtp(userId: string) {
     const code = randomInt(100000, 999999).toString();
-    // [CHANGED] Increased OTP validity to 30 minutes
     const expiresAt = dayjs().add(30, "minute").toDate();
 
     await prisma.otp.create({
@@ -218,8 +206,6 @@ export class AuthService {
         data: { isVerified: true },
       });
 
-      // [CRITICAL FIX] Generate the session token here!
-      // This was missing, causing the "Serialization" error on frontend
       const sessionToken = jwt.sign(
         { userId: user.id, role: user.role },
         process.env.JWT_SECRET as string,
@@ -229,7 +215,7 @@ export class AuthService {
       return {
         message: "Account Verified Successfully",
         user: { id: user.id, email: user.email, role: user.role },
-        token: sessionToken, // Return the token
+        token: sessionToken, 
       };
     } catch (error: any) {
         if(error.message === "The code you entered is invalid or has expired."){
@@ -243,12 +229,11 @@ export class AuthService {
   static async forgotPassword(email: string) {
     const user = await prisma.user.findUnique({ where: { email } });
     if (!user) {
-      // User friendly: Don't reveal if user exists, but for now lets be helpful
       throw new Error("We sent an OTP if this email exists."); 
     }
 
     const code = randomInt(100000, 999999).toString();
-    const expiresAt = dayjs().add(30, "minute").toDate(); // [CHANGED] 30m
+    const expiresAt = dayjs().add(30, "minute").toDate(); 
 
     await prisma.otp.create({
       data: { code, userId: user.id, expiresAt },
@@ -259,14 +244,11 @@ export class AuthService {
     const token = jwt.sign(
       { userId: user.id, purpose: "RESET_PASSWORD" },
       process.env.JWT_SECRET as string,
-      { expiresIn: "30m" } // [CHANGED] 30m
+      { expiresIn: "30m" } 
     );
 
     return { message: "OTP sent to email", token };
   }
-
-  // ... rest of methods (verifyForgotPasswordOtp, resetPassword) 
-  // Ensure you update their error messages to be friendly too if you wish.
   
   static async verifyForgotPasswordOtp(token: string, code: string) {
     try {

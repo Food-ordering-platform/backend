@@ -16,8 +16,19 @@ router.post(
   upload.single("image"), // "image" must match the name in your FormData on frontend
   RestaurantController.addMenuItem
 );
-//Create restaurant
-router.post("/", RestaurantController.createRestaurant);
+//Update restaurant
+router.put(
+  "/:id", 
+  upload.single("image"), 
+  RestaurantController.updateRestaurant
+);
+
+// Create Restaurant (Add upload.single)
+router.post(
+  "/", 
+  upload.single("image"), 
+  RestaurantController.createRestaurant
+);
 
 router.put("/menu/:id", RestaurantController.updateMenuItem);
 router.delete("/menu/:id", RestaurantController.deleteMenuItem);

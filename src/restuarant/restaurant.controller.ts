@@ -6,31 +6,46 @@ import { success } from "zod";
 
 export class RestaurantController {
   //Create Restaurant
-  static async createRestaurant(req:Request, res:Response){
-    try{
-      const authHeader = req.headers.authorization
-      if(!authHeader) throw new Error("No token Provided");
-      const token = authHeader.split(" ")[1]
-      const decoded: any = jwt.verify(token, process.env.JWT_SECRET as string)
+  static async createRestaurant(req: Request, res: Response) {
+    try {
+      const authHeader = req.headers.authorization;
+      if (!authHeader) throw new Error("No token Provided");
+      const token = authHeader.split(" ")[1];
+      const decoded: any = jwt.verify(token, process.env.JWT_SECRET as string);
 
       const ownerId = decoded.userId;
       const data = req.body;
-      const restaurant = await RestaurantService.createRestaurant(ownerId, data);
+
+      // [FIX] Handle Image
+      if (req.file) {
+        data.imageUrl = (req.file as any).path;
+      }
+
+      // [FIX] Convert FormData strings to correct types
+      if (data.prepTime) data.prepTime = parseInt(data.prepTime);
+      if (data.minimumOrder) data.minimumOrder = parseFloat(data.minimumOrder);
+      if (data.isOpen === "true") data.isOpen = true;
+      if (data.isOpen === "false") data.isOpen = false;
+
+      const restaurant = await RestaurantService.createRestaurant(
+        ownerId,
+        data
+      );
 
       res.status(201).json({
-        success:true,
-        message:"Restaurant Profile Created  Successfully",
-        data:restaurant
-      })
-    }
-    catch(err: any){
-      console.error("Error Creating Restaurant:", err)
+        success: true,
+        message: "Restaurant Profile Created Successfully",
+        data: restaurant,
+      });
+    } catch (err: any) {
+      console.error("Error Creating Restaurant:", err);
       res.status(400).json({
-        success:false,
-        message:err.message || "Failed to create restaurant"
-      })
+        success: false,
+        message: err.message || "Failed to create restaurant",
+      });
     }
   }
+
   // GET /restaurant
   static async getAllRestaurants(req: Request, res: Response) {
     try {
@@ -75,23 +90,21 @@ export class RestaurantController {
   }
 
   // PUT /restaurant/:id
+  //Update restaurant
   static async updateRestaurant(req: Request, res: Response) {
     try {
       const { id } = req.params;
       const data = req.body;
 
-      // [FIX] Handle Image Upload
+      // [FIX] Handle Image
       if (req.file) {
-        data.imageUrl = (req.file as any).path; // Cloudinary URL
+        data.imageUrl = (req.file as any).path;
       }
 
-      // Handle Boolean conversion (FormData sends booleans as strings "true"/"false")
-      if (typeof data.isOpen === 'string') {
-        data.isOpen = data.isOpen === 'true';
-      }
-      if (data.prepTime) {
-        data.prepTime = parseInt(data.prepTime);
-      }
+      // [FIX] Convert types
+      if (data.prepTime) data.prepTime = parseInt(data.prepTime);
+      if (data.isOpen === "true") data.isOpen = true;
+      if (data.isOpen === "false") data.isOpen = false;
 
       const updated = await RestaurantService.updateRestaurant(id, data);
       res.status(200).json({
@@ -127,10 +140,9 @@ export class RestaurantController {
   }
 
   //REMEMBER TO IMPLMENENT BACKEND VALIDATION WITH ZOD FOR MENUITEMS BEFORE SENDING TO DATABASE//
-
   // POST /restaurant/:id/menu
   static async addMenuItem(req: Request, res: Response) {
-   try {
+    try {
       const { id } = req.params; // restaurantId
       const data = req.body;
 
@@ -162,8 +174,9 @@ export class RestaurantController {
   }
 
   // PUT /menu/:id
+  //Update Menu Items
   static async updateMenuItem(req: Request, res: Response) {
-   try {
+    try {
       const { id } = req.params;
       const data = req.body;
 
@@ -178,7 +191,9 @@ export class RestaurantController {
       const updated = await RestaurantService.updateMenuItem(id, data);
       res.status(200).json({ success: true, data: updated });
     } catch (err: any) {
-      res.status(500).json({ success: false, message: "Failed to update item" });
+      res
+        .status(500)
+        .json({ success: false, message: "Failed to update item" });
     }
   }
 
@@ -189,18 +204,22 @@ export class RestaurantController {
       await RestaurantService.deleteMenuItem(id);
       res.status(200).json({ success: true, message: "Deleted successfully" });
     } catch (err: any) {
-      res.status(500).json({ success: false, message: "Failed to delete item" });
+      res
+        .status(500)
+        .json({ success: false, message: "Failed to delete item" });
     }
   }
 
   // PATCH /menu/:id/toggle
   static async toggleMenuItemAvailability(req: Request, res: Response) {
-   try {
+    try {
       const { id } = req.params;
       const updated = await RestaurantService.toggleMenuItemAvailability(id);
       res.status(200).json({ success: true, data: updated });
     } catch (err: any) {
-      res.status(500).json({ success: false, message: "Failed to toggle status" });
+      res
+        .status(500)
+        .json({ success: false, message: "Failed to toggle status" });
     }
   }
 }

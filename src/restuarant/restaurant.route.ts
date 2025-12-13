@@ -17,7 +17,7 @@ router.post(
 );
 
 // ✅ KEEP THIS ONE (It has the upload middleware)
-router.put(
+router.post(
   "/:id", 
   upload.single("image"), 
   RestaurantController.updateRestaurant

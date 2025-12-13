@@ -15,7 +15,10 @@ export class RestaurantController {
         ? parseFloat(body.minimumOrder)
         : undefined,
       // Parse booleans from "true"/"false" strings
-      isOpen: body.isOpen === "true" || body.isOpen === true,
+      isOpen:
+        body.isOpen !== undefined
+          ? body.isOpen === "true" || body.isOpen === true
+          : undefined,
     };
   }
   // Create Restaurant

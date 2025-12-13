@@ -100,7 +100,9 @@ export class RestaurantService {
     }
 
     // 2. Prepare Update Data
-    const updateData = { ...data };
+    const updateData = Object.fromEntries(
+      Object.entries(data).filter(([_, value]) => value !== undefined)
+    );
 
     // Only update the image URL if a new one was uploaded
     if (imageUrl) {

@@ -195,7 +195,7 @@ export class RestaurantController {
       });
     }
   }
-  
+
   // PUT /menu/:id
   static async updateMenuItem(req: Request, res: Response) {
     try {

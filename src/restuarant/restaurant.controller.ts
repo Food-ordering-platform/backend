@@ -166,20 +166,21 @@ export class RestaurantController {
   }
 
   // POST /restaurant/:id/menu
+  // POST /restaurant/:id/menu
   static async addMenuItem(req: Request, res: Response) {
     try {
       const { id } = req.params; // restaurantId
       const data = req.body;
 
-      if (req.file) {
-        data.imageUrl = (req.file as any).path;
-      }
+      // [FIX] Don't try to access req.file.path here.
+      // Pass the raw file to the service instead.
 
       if (data.price) {
         data.price = parseFloat(data.price);
       }
 
-      const item = await RestaurantService.addMenuItem(id, data);
+      // Pass req.file (the memory file) to the service
+      const item = await RestaurantService.addMenuItem(id, data, req.file);
 
       res.status(201).json({
         success: true,
@@ -194,7 +195,7 @@ export class RestaurantController {
       });
     }
   }
-
+  
   // PUT /menu/:id
   static async updateMenuItem(req: Request, res: Response) {
     try {

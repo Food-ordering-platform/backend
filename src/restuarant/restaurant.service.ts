@@ -125,18 +125,29 @@ export class RestaurantService {
   }
 
   // Add a new menu item
-  static async addMenuItem(restaurantId: string, data: any) {
-    // 1. Verify a restaurant exists
+  // [FIX] Added 'file' parameter
+  static async addMenuItem(
+    restaurantId: string, 
+    data: any, 
+    file?: Express.Multer.File
+  ) {
+    // 1. Verify restaurant exists
     const restaurant = await prisma.restaurant.findUnique({
       where: { id: restaurantId },
     });
     if (!restaurant) throw new Error("Restaurant not found");
 
+    // 2. Handle File Upload (Ticketer Strategy)
+    let imageUrl = data.imageUrl; // Keep existing if passed, though unlikely
+    if (file) {
+      const uploadResult = await uploadToCloudinary(file);
+      imageUrl = uploadResult.secure_url || uploadResult.url;
+    }
+
     let categoryId = data.categoryId;
 
-    // 2. If a category name is provided, find it or create one
+    // 3. Find or Create Category
     if (data.categoryName) {
-      // Clean up the input, trim space
       const cleanName = data.categoryName.trim();
 
       const existingCategory = await prisma.menuCategory.findFirst({
@@ -151,7 +162,6 @@ export class RestaurantService {
       if (existingCategory) {
         categoryId = existingCategory.id;
       } else {
-        // Create a new Category
         const newCategory = await prisma.menuCategory.create({
           data: {
             name: cleanName,
@@ -166,13 +176,14 @@ export class RestaurantService {
       throw new Error("Category is required");
     }
 
+    // 4. Create Menu Item
     return await prisma.menuItem.create({
       data: {
         name: data.name,
         description: data.description,
-        price: data.price, // Ensure this is a number before passing here
-        imageUrl: data.imageUrl,
-        available: true, // Default to available
+        price: data.price, 
+        imageUrl: imageUrl, // Uses the Cloudinary URL
+        available: true,
         restaurantId,
         categoryId,
       },

@@ -1,6 +1,7 @@
 import { OrderStatus, PrismaClient } from "../../generated/prisma";
 import { PaymentService } from "../payment/payment.service";
 import { randomBytes } from "crypto";
+import { sendOrderStatusEmail } from "../utils/mailer";
 
 const prisma = new PrismaClient();
 
@@ -23,7 +24,6 @@ export class OrderService {
     customerName: string,
     customerEmail: string
   ) {
-
     // 1. Fetch Restaurant (Just to ensure it exists)
     const restaurant = await prisma.restaurant.findUnique({
       where: { id: restaurantId },
@@ -46,9 +46,9 @@ export class OrderService {
     let reference = generateReference();
     let referenceExists = true;
     while (referenceExists) {
-        const existing = await prisma.order.findUnique({ where: { reference } });
-        if (!existing) referenceExists = false;
-        else reference = generateReference();
+      const existing = await prisma.order.findUnique({ where: { reference } });
+      if (!existing) referenceExists = false;
+      else reference = generateReference();
     }
 
     // 4. Create order in DB with Snapshots and Reference
@@ -65,14 +65,15 @@ export class OrderService {
         items: {
           create: items.map((i) => {
             const originalItem = itemsMap.get(i.menuItemId);
-            if (!originalItem) throw new Error(`Menu item ${i.menuItemId} not found`);
+            if (!originalItem)
+              throw new Error(`Menu item ${i.menuItemId} not found`);
 
             return {
               // We only store the ID loosely now, no relation constraint
               menuItemId: i.menuItemId,
               menuItemName: originalItem.name, // <--- SNAPSHOT: Name
               quantity: i.quantity,
-              price: i.price, 
+              price: i.price,
             };
           }),
         },
@@ -122,12 +123,12 @@ export class OrderService {
     return prisma.order.findUnique({
       where: { reference },
       include: {
-        restaurant: { 
-          select: { 
-            name: true, 
-            address: true, 
-            phone: true 
-          } 
+        restaurant: {
+          select: {
+            name: true,
+            address: true,
+            phone: true,
+          },
         },
         items: {
           select: {
@@ -149,7 +150,7 @@ export class OrderService {
       where: { restaurantId },
       include: {
         items: true,
-        customer: { select: { name: true, phone: true, address: true } }
+        customer: { select: { name: true, phone: true, address: true } },
       },
       orderBy: { createdAt: "desc" },
     });
@@ -168,16 +169,29 @@ export class OrderService {
       try {
         console.log(`Auto-refunding Order ${order.reference}...`);
         await PaymentService.refund(order.reference);
-        newPaymentStatus = "REFUNDED"; 
+        newPaymentStatus = "REFUNDED";
       } catch (error) {
         console.error("Refund failed. Admin intervention required.");
       }
     }
-    // Update Database
-    return await prisma.order.update({
+    // 3. Update Database AND Return Customer Info
+    const updatedOrder = await prisma.order.update({
       where: { id: orderId },
       data: { status, paymentStatus: newPaymentStatus },
-      include: { customer: true }
+      include: { customer: true }, // <--- CRITICAL: Get customer email
     });
+
+    // 4. [NEW] Send Notification
+    if (updatedOrder.customer && updatedOrder.customer.email) {
+      // We don't await this so it runs in background (optional)
+      sendOrderStatusEmail(
+        updatedOrder.customer.email,
+        updatedOrder.customer.name,
+        updatedOrder.id,
+        status
+      );
+    }
+
+    return updatedOrder;
   }
 }

@@ -103,7 +103,7 @@ export class OrderController {
         return res.status(400).json({success: false, Message:"OrderID and status is required"})
       }
       const updateOrder = await OrderService.updateOrderStatus(id, status)
-      return res.status(400).json({success:true, data:updateOrder})
+      return res.status(200).json({success:true, data:updateOrder})
     }
     catch(err:any){
       console.error("Update order status error", err)

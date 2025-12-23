@@ -31,7 +31,6 @@ const generateEmailHTML = (
       
       <div style="max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 20px; overflow: hidden; margin-top: 40px; margin-bottom: 40px; box-shadow: 0 20px 25px -5px rgba(139, 21, 56, 0.15), 0 10px 10px -5px rgba(139, 21, 56, 0.08);">
         
-        <!-- Header with gradient -->
         <div style="background: linear-gradient(135deg, ${accentColor} 0%, ${BRAND_COLORS.wineDark} 100%); padding: 40px 30px; text-align: center; position: relative; overflow: hidden;">
           <div style="position: absolute; top: -50px; right: -50px; width: 200px; height: 200px; background: rgba(255, 255, 255, 0.1); border-radius: 50%;"></div>
           <div style="position: absolute; bottom: -30px; left: -30px; width: 150px; height: 150px; background: rgba(255, 255, 255, 0.08); border-radius: 50%;"></div>
@@ -42,7 +41,6 @@ const generateEmailHTML = (
           </div>
         </div>
 
-        <!-- Content -->
         <div style="padding: 50px 40px; text-align: center;">
           ${emoji ? `<div style="font-size: 48px; margin-bottom: 20px;">${emoji}</div>` : ''}
           
@@ -53,7 +51,6 @@ const generateEmailHTML = (
           </div>
         </div>
 
-        <!-- Footer -->
         <div style="background: linear-gradient(to bottom, #FFFFFF 0%, #F9FAFB 100%); padding: 30px 40px; text-align: center; border-top: 2px solid ${BRAND_COLORS.cream};">
           <div style="margin-bottom: 16px;">
             <a href="#" style="display: inline-block; margin: 0 8px; color: ${BRAND_COLORS.wine}; text-decoration: none; font-size: 12px; font-weight: 600;">About</a>
@@ -71,6 +68,16 @@ const generateEmailHTML = (
     </body>
     </html>
   `;
+};
+
+// --- HELPER: CHECK ENV ---
+const getEmailServiceUrl = () => {
+  const url = process.env.EMAIL_SERVICE_URL;
+  if (!url) {
+    console.error("❌ EMAIL_SERVICE_URL is missing in .env file!");
+    throw new Error("Email configuration error");
+  }
+  return url;
 };
 
 // --- BEAUTIFUL OTP EMAIL ---
@@ -103,7 +110,7 @@ export async function sendOtPEmail(email: string, otp: string) {
     );
 
     const response = await axios.post(
-      process.env.EMAIL_SERVICE_URL!, 
+      getEmailServiceUrl(), 
       {
         to: email,
         subject: "🔐 Your ChowEazy Login Code",
@@ -114,7 +121,8 @@ export async function sendOtPEmail(email: string, otp: string) {
     console.log("OTP email sent successfully");
     return response.data;
   } catch (err: any) {
-    console.error("Error sending OTP email:", err.message);
+    // Enhanced Error Logging
+    console.error("Error sending OTP email:", err.response?.data || err.message);
     throw new Error("OTP email failed");
   }
 }
@@ -127,7 +135,7 @@ export async function sendOrderStatusEmail(
   status: string
 ) {
   try {
-    const shortId = orderId.slice(0, 6).toUpperCase();
+    const shortId = orderId ? orderId.slice(0, 6).toUpperCase() : "ORDER";
     let title = "";
     let message = "";
     let color = BRAND_COLORS.wine;
@@ -240,7 +248,7 @@ export async function sendOrderStatusEmail(
     const htmlContent = generateEmailHTML(title, message, color, emoji);
 
     await axios.post(
-      process.env.EMAIL_SERVICE_URL!, 
+      getEmailServiceUrl(), 
       {
         to: email,
         subject: `${emoji} Order Update: #${shortId}`,
@@ -249,6 +257,7 @@ export async function sendOrderStatusEmail(
     );
     console.log(`Order email sent to ${email} for status ${status}`);
   } catch (err: any) {
-    console.error("Failed to send order email:", err.message);
+    // Enhanced Error Logging to help debugging
+    console.error("Failed to send order email:", err.response?.data || err.message);
   }
 }

@@ -147,7 +147,7 @@ export class OrderService {
   // 1️⃣ VENDOR DASHBOARD: Get all orders for the restaurant
   static async getVendorOrders(restaurantId: string) {
     return await prisma.order.findMany({
-      where: { restaurantId },
+      where: { restaurantId, paymentStatus: {in : ["PAID", "REFUNDED"]} },
       include: {
         items: true,
         customer: { select: { name: true, phone: true, address: true } },

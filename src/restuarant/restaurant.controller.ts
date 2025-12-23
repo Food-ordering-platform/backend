@@ -171,10 +171,7 @@ export class RestaurantController {
     try {
       const { id } = req.params; // restaurantId
       const data = req.body;
-
-      // [FIX] Don't try to access req.file.path here.
-      // Pass the raw file to the service instead.
-
+      
       if (data.price) {
         data.price = parseFloat(data.price);
       }

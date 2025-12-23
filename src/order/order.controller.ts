@@ -1,5 +1,8 @@
 import { Request, Response } from "express";
 import { OrderService } from "./order.service";
+import { success } from "zod";
+import { Message } from "node-mailjet";
+import prisma from "../utils/prisma";
 
 export class OrderController {
   // Create a new order AND initialize payment
@@ -74,4 +77,37 @@ export class OrderController {
     }
   }
 
+
+  //-----------------------MOBILE APP LOGIC FOR VENDOR(GET_VENDOR_ORDERS)-------------------------------------//
+  static async getVendorOrders(req:Request, res:Response){
+    try{
+      const {restaurantId} = req.params; //RestaurantId
+      if(!restaurantId){
+        return res.status(400).json({success:false, message:"Restaurant ID is required"});
+      }
+      const orders = await OrderService.getVendorOrders(restaurantId);
+      return res.status(200).json({success:true, data:orders})
+    }
+    catch(err:any){
+      console.error("Get Vendor orders error", err)
+      return res.status(500).json({success: false, message:err.message || "Server Error"})
+    }
+  }
+
+  //Update Order Status (i.e ACCEPT, REJECT)
+  static async updateOrderStatus(req:Request, res:Response){
+    try{
+      const {id} = req.params //orderId
+      const {status} = req.body
+      if(!id || !status){
+        return res.status(400).json({success: false, Message:"OrderID and status is required"})
+      }
+      const updateOrder = await OrderService.updateOrderStatus(id, status)
+      return res.status(400).json({success:true, data:updateOrder})
+    }
+    catch(err:any){
+      console.error("Update order status error", err)
+      return res.status(500).json({success:true, Message:err.message || "Server Error"})
+    }
+  }
 }

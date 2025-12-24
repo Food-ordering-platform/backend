@@ -20,6 +20,7 @@ export class OrderService {
     restaurantId: string,
     totalAmount: number,
     deliveryAddress: string,
+    deliveryNotes: string | undefined, // <--- ✅ ADDED PARAMETER
     items: { menuItemId: string; quantity: number; price: number }[],
     customerName: string,
     customerEmail: string
@@ -57,10 +58,11 @@ export class OrderService {
         customerId,
         restaurantId,
         totalAmount,
-        deliveryFee: PLATFORM_DELIVERY_FEE, // <--- CHANGED: Uses Platform Fee
+        deliveryFee: PLATFORM_DELIVERY_FEE,
         paymentStatus: "PENDING",
         status: "PENDING",
         deliveryAddress,
+        deliveryNotes: deliveryNotes || null, // <--- ✅ SAVED TO DB
         reference,
         items: {
           create: items.map((i) => {
@@ -81,10 +83,11 @@ export class OrderService {
       include: { items: true },
     });
 
+    // Send "Order Received" Email immediately
     if(customerEmail){
       sendOrderStatusEmail(
         customerEmail, customerName, order.id, "PENDING"
-      ).catch(e => console.log("Initial order email failed", e))
+      ).catch(e => console.log("Initial order email failed", e));
     }
 
     // 5. Initialize payment
@@ -153,7 +156,8 @@ export class OrderService {
   // 1️⃣ VENDOR DASHBOARD: Get all orders for the restaurant
   static async getVendorOrders(restaurantId: string) {
     return await prisma.order.findMany({
-      where: { restaurantId, paymentStatus: {in : ["PAID", "REFUNDED"]} },
+      // Only show orders that are PAID or REFUNDED (History)
+      where: { restaurantId, paymentStatus: { in : ["PAID", "REFUNDED"] } },
       include: {
         items: true,
         customer: { select: { name: true, phone: true, address: true } },
@@ -162,8 +166,7 @@ export class OrderService {
     });
   }
 
-  //2. UPDATE ORDER STATUS BASED ON VENDOR ACTIONS
-
+  // 2. UPDATE ORDER STATUS BASED ON VENDOR ACTIONS
   static async updateOrderStatus(orderId: string, status: OrderStatus) {
     const order = await prisma.order.findUnique({ where: { id: orderId } });
     if (!order) throw new Error("Order not found");
@@ -180,6 +183,7 @@ export class OrderService {
         console.error("Refund failed. Admin intervention required.");
       }
     }
+    
     // 3. Update Database AND Return Customer Info
     const updatedOrder = await prisma.order.update({
       where: { id: orderId },

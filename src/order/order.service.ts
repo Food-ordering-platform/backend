@@ -81,6 +81,12 @@ export class OrderService {
       include: { items: true },
     });
 
+    if(customerEmail){
+      sendOrderStatusEmail(
+        customerEmail, customerName, order.id, "PENDING"
+      ).catch(e => console.log("Initial order email failed", e))
+    }
+
     // 5. Initialize payment
     const checkoutUrl = await PaymentService.initiatePayment(
       totalAmount,

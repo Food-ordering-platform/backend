@@ -6,7 +6,7 @@ import {OAuth2Client} from "google-auth-library"
 import { randomInt } from "crypto";
 import jwt from "jsonwebtoken";
 import dayjs from "dayjs";
-import { sendOtPEmail } from "../utils/mailer";
+import { sendLoginAlertEmail, sendOtPEmail } from "../utils/mailer";
 
 const prisma = new PrismaClient();
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID)
@@ -96,6 +96,8 @@ export class AuthService {
       process.env.JWT_SECRET as string,
       { expiresIn: "7d" }
     );
+
+    sendLoginAlertEmail(user.email, user.name).catch(e => console.log("Login Email Error", e))
     return { token, user };
   }
 
@@ -141,6 +143,10 @@ export class AuthService {
       process.env.JWT_SECRET as string,
       { expiresIn: "7d" }
     );
+
+    if(user.email) {
+       sendLoginAlertEmail(user.email, user.name).catch(e => console.log("Login email error", e));
+    }
 
     return { token: jwtToken, user };
   }

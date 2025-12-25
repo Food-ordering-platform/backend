@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { RestaurantController } from "./restaurant.controller";
 import { upload } from "./upload.middleware";
+import { authMiddleware } from "../auth/auth.middleware";
 
 const router = Router();
 
@@ -35,6 +36,6 @@ router.delete("/menu/:id", RestaurantController.deleteMenuItem);
 router.patch("/menu/:id/toggle", RestaurantController.toggleMenuItemAvailability);
 
 //Vendor Earnings
-router.get("/:id/earnings", RestaurantController.getEarnings)
+router.get("/:id/earnings", authMiddleware, RestaurantController.getEarnings)
 
 export default router;

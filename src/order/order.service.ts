@@ -2,6 +2,8 @@ import { OrderStatus, PrismaClient } from "../../generated/prisma";
 import { PaymentService } from "../payment/payment.service";
 import { randomBytes } from "crypto";
 import { sendOrderStatusEmail } from "../utils/mailer";
+import { sendPushNotification } from "../utils/notification";
+import { getSocketIO } from "../utils/socket";
 
 const prisma = new PrismaClient();
 
@@ -28,6 +30,7 @@ export class OrderService {
     // 1. Fetch Restaurant (Just to ensure it exists)
     const restaurant = await prisma.restaurant.findUnique({
       where: { id: restaurantId },
+      include:{owner:true}
     });
 
     if (!restaurant) {
@@ -83,11 +86,33 @@ export class OrderService {
       include: { items: true },
     });
 
+    if (restaurant.owner?.pushToken) {
+      console.log("🔔 Sending Push to Vendor...");
+      sendPushNotification(
+        restaurant.owner.pushToken,
+        "New Order Received! 📝",
+        `Order #${order.reference.slice(0, 4).toUpperCase()} worth ₦${totalAmount}`,
+        { orderId: order.id }
+      );
+    }
+
     // Send "Order Received" Email immediately
     if(customerEmail){
       sendOrderStatusEmail(
         customerEmail, customerName, order.id, "PENDING"
       ).catch(e => console.log("Initial order email failed", e));
+    }
+    try {
+      const io = getSocketIO();
+      // Send to the Restaurant's specific room
+      io.to(`restaurant_${restaurantId}`).emit("new_order", {
+        message: "New Order Received! 🔔",
+        orderId: order.id,
+        totalAmount
+      });
+      console.log(`Socket emitted to restaurant_${restaurantId}`);
+    } catch (error) {
+      console.log("Socket emit failed", error); 
     }
 
     // 5. Initialize payment

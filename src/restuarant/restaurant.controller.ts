@@ -1,6 +1,7 @@
 import { Request, Response } from "express";
 import { RestaurantService } from "./restaurant.service";
 import jwt from "jsonwebtoken";
+import { success } from "zod";
 
 export class RestaurantController {
   private static parseRestaurantBody(body: any) {
@@ -238,6 +239,24 @@ export class RestaurantController {
       res
         .status(500)
         .json({ success: false, message: "Failed to toggle status" });
+    }
+  }
+
+  //----------GET VENDOR EARNINGS ------------------//
+  static async getEarnings(req:Request, res:Response){
+    try {
+      const { id } = req.params  //Get restaurantId from URL
+      //Call the service logic
+      const earnings = await RestaurantService.getEarnings(id);
+
+      res.status(200).json({
+        success:true,
+        data:earnings,
+      });
+    }
+    catch(err: any){
+      console.error("Error fetching earnings:", err);
+      res.status(500).json({success:false, message:err.message || "Failed to fetch earnings"})
     }
   }
 }

@@ -127,8 +127,8 @@ export class RestaurantService {
   // Add a new menu item
   // [FIX] Added 'file' parameter
   static async addMenuItem(
-    restaurantId: string, 
-    data: any, 
+    restaurantId: string,
+    data: any,
     file?: Express.Multer.File
   ) {
     // 1. Verify restaurant exists
@@ -181,7 +181,7 @@ export class RestaurantService {
       data: {
         name: data.name,
         description: data.description,
-        price: data.price, 
+        price: data.price,
         imageUrl: imageUrl, // Uses the Cloudinary URL
         available: true,
         restaurantId,
@@ -214,5 +214,51 @@ export class RestaurantService {
       where: { id },
       data: { available: !item.available },
     });
+  }
+
+  //---------------GET EARNING FOR VENDOR -------------------//
+  // Add this method to RestaurantService
+  static async getEarnings(restaurantId: string) {
+    // 1. Calculate Available Balance (Completed Orders)
+    const availableAggregate = await prisma.order.aggregate({
+      where: {
+        restaurantId,
+        status: "DELIVERED",
+        paymentStatus: "PAID", // Ensure we actually got the money
+      },
+      _sum: {
+        totalAmount: true,
+        deliveryFee: true,
+      },
+    });
+
+    // 2. Calculate Pending Balance (Active Orders)
+    const pendingAggregate = await prisma.order.aggregate({
+      where: {
+        restaurantId,
+        status: { not: "DELIVERED" }, // Anything NOT delivered yet
+        paymentStatus: "PAID",
+      },
+      _sum: {
+        totalAmount: true,
+        deliveryFee: true,
+      },
+    });
+
+    // NOTE: If the delivery fee belongs to the Platform, subtract it.
+    // Assuming totalAmount includes delivery fee.
+
+    const calculateNet = (agg: any) => {
+      const total = agg._sum.totalAmount || 0;
+      const fees = agg._sum.deliveryFee || 0;
+      // If you (Platform) take the delivery fee, the Vendor gets (Total - Fee).
+      return total - fees;
+    };
+
+    return {
+      availableBalance: calculateNet(availableAggregate),
+      pendingBalance: calculateNet(pendingAggregate),
+      currency: "NGN",
+    };
   }
 }

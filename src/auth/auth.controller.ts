@@ -169,4 +169,29 @@ export class AuthController {
       return res.status(400).json({ error: err.message });
     }
   }
+
+  //------------------PUSH NOTIFICATION FOR VENDORS-------------------------------//
+  // ... existing methods ...
+
+  // ✅ ADD THIS METHOD
+  static async updatePushToken(req: Request, res: Response) {
+    try {
+      const { token } = req.body;
+      
+      // Get user ID from the token (Middleware usually attaches this)
+      // If your middleware attaches to req.user, use that. 
+      // Based on your getMe code:
+      const authHeader = req.headers.authorization;
+      if (!authHeader) throw new Error("No token");
+      const jwtToken = authHeader.split(" ")[1];
+      const decoded = jwt.verify(jwtToken, process.env.JWT_SECRET as string) as { userId: string };
+
+      await AuthService.updatePushToken(decoded.userId, token);
+
+      return res.json({ success: true });
+    } catch (err: any) {
+      return res.status(500).json({ error: "Failed to update token" });
+    }
+  }
 }
+

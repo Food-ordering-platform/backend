@@ -34,4 +34,7 @@ router.put("/menu/:id", RestaurantController.updateMenuItem);
 router.delete("/menu/:id", RestaurantController.deleteMenuItem);
 router.patch("/menu/:id/toggle", RestaurantController.toggleMenuItemAvailability);
 
+//Vendor Earnings
+router.get("/:id/earnings", RestaurantController.getEarnings)
+
 export default router;

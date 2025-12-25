@@ -26,4 +26,7 @@ router.post("/verify-reset-otp", AuthController.verifyResetOtp);
 // Reset password
 router.post("/reset-password", AuthController.resetPassword);
 
+//Push Notificatioin
+router.post("/push-token", AuthController.updatePushToken); 
+
 export default router;

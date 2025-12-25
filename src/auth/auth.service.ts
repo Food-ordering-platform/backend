@@ -299,4 +299,13 @@ export class AuthService {
       throw new Error("Your session expired. Please start the password reset process again.");
     }
   }
+
+  //------------------PUSH NOTIFICATION FOR VENDORS ---------------------------//
+  // ... inside AuthService class
+  static async updatePushToken(userId: string, token: string) {
+    return prisma.user.update({
+      where: { id: userId },
+      data: { pushToken: token }
+    });
+  }
 }

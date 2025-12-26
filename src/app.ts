@@ -22,17 +22,16 @@ const pool = new Pool({
 
 // 2. HYBRID CORS CONFIGURATION (Crucial for Mobile + Web)
 // Define your web frontend URLs here. Add your production domain later.
-const allowedOrigins = ["http://localhost:3000", "http://127.0.0.1:3000", "https://choweazy.vercel.app"];
 
 app.use(
   cors({
     origin: ["http://localhost:3000", "https://choweazy.vercel.app"],
     methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
+    preflightContinue: false,
+    optionsSuccessStatus: 204, // This matches the 204 you see in logs
   })
 );
-
-
 app.use(morgan("dev"));
 
 // 3. JSON Parsing (Skip for Webhooks)

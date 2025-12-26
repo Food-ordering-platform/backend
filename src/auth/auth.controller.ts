@@ -42,9 +42,9 @@ export class AuthController {
       // We ALWAYS return the token now. Web will store it in localStorage.
       return res.status(200).json({
         message: "Login successful",
-        token: result.token, 
+        token: result.token,
         user: result.user,
-        requireOtp: result.requireOtp
+        requireOtp: result.requireOtp,
       });
     } catch (err: any) {
       return res.status(400).json({ error: err.message });
@@ -59,23 +59,11 @@ export class AuthController {
 
       const result = await AuthService.loginWithGoogle(token);
 
-      // HYBRID AUTH FOR GOOGLE
-      if (clientType === "web") {
-        (req.session as any).user = {
-          id: result.user.id,
-          role: result.user.role,
-          email: result.user.email,
-        };
-        return res.status(200).json({
-          message: "Google login successful (Session)",
-          user: result.user,
-        });
-      } else {
-        return res.status(200).json({
-          message: "Google login successful (Token)",
-          result,
-        });
-      }
+      return res.status(200).json({
+        message: "Google login successful",
+        token: result.token, // Ensure this is returned!
+        user: result.user,
+      });
     } catch (err: any) {
       return res.status(400).json({ error: err.message });
     }
@@ -111,7 +99,7 @@ export class AuthController {
       return res.status(200).json({
         message: "Account verified successfully",
         token: result.token, // Permanent JWT
-        user: result.user
+        user: result.user,
       });
     } catch (err: any) {
       return res.status(400).json({ error: err.message });

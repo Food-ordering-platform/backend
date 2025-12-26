@@ -12,26 +12,41 @@ import paymentRouter from "./payment/payment.route";
 
 const app = express();
 
-// --- ADD THIS BLOCK BEFORE ROUTES ---
+// 1. Setup Session Store (Postgres)
 const PgStore = pgSession(session);
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
 });
 
-// [FIX] Explicit CORS to prevent "Network Error" on preflight requests
+// 2. HYBRID CORS CONFIGURATION (Crucial for Mobile + Web)
+// Define your web frontend URLs here. Add your production domain later.
+const allowedOrigins = ["http://localhost:3000", "http://127.0.0.1:3000", "https://choweazy.vercel.app"];
+
 app.use(
   cors({
-    origin: "*", // Allow all origins (Mobile apps often need this)
+    origin: function (origin, callback) {
+      // CASE A: Mobile Apps / Postman (Requests with no Origin header)
+      // We allow these because mobile apps don't have a domain name.
+      if (!origin) return callback(null, true);
+
+      // CASE B: Web Frontend (Requests WITH Origin header)
+      // We must check if they are in our whitelist to allow Cookies/Sessions.
+      if (allowedOrigins.indexOf(origin) !== -1) {
+        return callback(null, true);
+      } else {
+        const msg = "The CORS policy for this site does not allow access from the specified Origin.";
+        return callback(new Error(msg), false);
+      }
+    },
     methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"],
-    credentials: true,
+    allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
+    credentials: true, // This allows the Web Frontend to send/receive Cookies
   })
 );
 
 app.use(morgan("dev"));
 
-// Apply express.json()
-// We keep your logic to skip it for webhooks
+// 3. JSON Parsing (Skip for Webhooks)
 app.use((req, res, next) => {
   if (req.path.startsWith("/api/payment/webhook")) {
     next();
@@ -40,34 +55,35 @@ app.use((req, res, next) => {
   }
 });
 
+app.use(express.urlencoded({ extended: true }));
+
+// 4. Session Middleware
 app.use(
   session({
     store: new PgStore({
       pool: pool,
-      tableName: "session",
+      tableName: "session", // Make sure this matches your Prisma map
       createTableIfMissing: true,
     }),
-    secret: process.env.JWT_SECRET as string, // Or a separate SESSION_SECRET
+    secret: process.env.JWT_SECRET as string, // Using JWT_SECRET as session secret
     resave: false,
     saveUninitialized: false,
     cookie: {
       maxAge: 30 * 24 * 60 * 60 * 1000, // 30 Days
-      httpOnly: true, // Security: JS cannot read this
-      secure: process.env.NODE_ENV === "production", // HTTPS only in prod
-      sameSite: process.env.NODE_ENV === "production" ? "none" : "lax", // Adjust based on your frontend domain
+      httpOnly: true, // Security: JavaScript cannot read this cookie
+      secure: process.env.NODE_ENV === "production", // HTTPS only in production
+      sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
     },
   })
 );
 
-// Routes
+// 5. Routes
 app.use("/api/auth", authRouter);
 app.use("/api/restaurant", restaurantRouter);
 app.use("/api/orders", orderRouter);
 app.use("/api/payment", paymentRouter);
 
-// [CRITICAL FIX] Global Error Handler
-// This catches backend crashes (like Multer errors) and sends a JSON response
-// preventing the "Network Error" on the frontend.
+// 6. Global Error Handler
 app.use(
   (
     err: any,
@@ -75,13 +91,21 @@ app.use(
     res: express.Response,
     next: express.NextFunction
   ) => {
-    console.error("🔥 Global Backend Error:", err); // Check your Railway logs for this!
+    console.error("🔥 Global Backend Error:", err); // Log error for debugging
 
-    // Handle Multer File Size Error specifically
+    // Handle Multer File Size Error
     if (err.code === "LIMIT_FILE_SIZE") {
       return res.status(400).json({
         success: false,
         message: "File is too large. Max limit is 5MB.",
+      });
+    }
+
+    // Handle CORS Errors
+    if (err.message && err.message.includes("CORS")) {
+      return res.status(403).json({
+        success: false,
+        message: "CORS Error: Origin not allowed",
       });
     }
 

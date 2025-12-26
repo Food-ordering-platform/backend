@@ -12,6 +12,8 @@ import paymentRouter from "./payment/payment.route";
 
 const app = express();
 
+
+app.set("trust proxy", 1) //Tells express to trust the load balancer
 // 1. Setup Session Store (Postgres)
 const PgStore = pgSession(session);
 const pool = new Pool({

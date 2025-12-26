@@ -20,7 +20,7 @@ export class PaymentService {
         currency: "NGN",
         reference,
         customer: { name, email },
-        redirect_url: `${process.env.FRONTEND_URL}/orders/details`, // ✅ updated
+        redirect_url: `https://choweazy.vercel.app/orders/details`, // ✅ updated
 
         notification_url:
           "https://food-ordering-app.up.railway.app/api/payment/webhook",

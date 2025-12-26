@@ -1,3 +1,5 @@
+// food-ordering-platform/backend/backend-main/src/auth/auth.middleware.ts
+
 import { Request, Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
 
@@ -16,15 +18,17 @@ export const authMiddleware = (req: Request, res: Response, next: NextFunction) 
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
       return res.status(401).json({ 
         success: false, 
-        message: "Your session has expired. Please log in again." 
+        message: "No token provided. Please login." 
       });
     }
 
     const token = authHeader.split(" ")[1];
+    
+    // Verify Token
     const decoded = jwt.verify(token, process.env.JWT_SECRET as string) as any;
 
     req.user = {
-      id: decoded.id || decoded.userId,
+      id: decoded.id || decoded.userId, // Handle different payload keys if any
       role: decoded.role,
       email: decoded.email
     };
@@ -33,7 +37,7 @@ export const authMiddleware = (req: Request, res: Response, next: NextFunction) 
   } catch (error) {
     return res.status(401).json({ 
       success: false, 
-      message: "Invalid session. Please log in again." 
+      message: "Invalid or expired token. Please login again." 
     });
   }
 };

@@ -74,7 +74,7 @@ app.use(
       maxAge: 30 * 24 * 60 * 60 * 1000, // 30 Days
       httpOnly: true, // Security: JavaScript cannot read this cookie
       secure: process.env.NODE_ENV === "production", // HTTPS only in production
-      sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+      sameSite: "none",
     },
   })
 );

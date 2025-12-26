@@ -29,6 +29,7 @@ app.use(
     methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
     preflightContinue: false,
+    credentials:true,
     optionsSuccessStatus: 204, // This matches the 204 you see in logs
   })
 );

@@ -4,7 +4,6 @@ import { registerSchema, loginSchema } from "./auth.validator";
 import { error } from "console";
 
 export class AuthController {
-  
   // ------------------ REGISTER ------------------
   // (Mostly unchanged, returns a temp token for OTP flow)
   static async register(req: Request, res: Response) {
@@ -38,7 +37,7 @@ export class AuthController {
   static async login(req: Request, res: Response) {
     try {
       // Ensure your loginSchema allows 'clientType'
-      const data = loginSchema.parse(req.body); 
+      const data = loginSchema.parse(req.body);
       const clientType = req.body.clientType || "mobile"; // Default to mobile
 
       const result = await AuthService.login(data.email, data.password);
@@ -47,7 +46,7 @@ export class AuthController {
       if (result.requireOtp) {
         return res.status(200).json({
           message: "Account not verified. OTP sent.",
-          requireOtp: true, 
+          requireOtp: true,
           token: result.token, // Temp token for verification
           user: {
             id: result.user.id,
@@ -64,12 +63,12 @@ export class AuthController {
         (req.session as any).user = {
           id: result.user.id,
           role: result.user.role,
-          email: result.user.email
+          email: result.user.email,
         };
 
         return res.status(200).json({
           message: "Login successful (Session Active)",
-          user: result.user
+          user: result.user,
           // NO TOKEN RETURNED FOR WEB
         });
       } else {
@@ -79,12 +78,11 @@ export class AuthController {
           result, // Contains token and user
         });
       }
-
     } catch (err: any) {
       return res.status(400).json({ error: err.message });
     }
   }
-  
+
   // ------------------ GOOGLE LOGIN ------------------
   static async googleLogin(req: Request, res: Response) {
     try {
@@ -95,14 +93,14 @@ export class AuthController {
 
       // HYBRID AUTH FOR GOOGLE
       if (clientType === "web") {
-         (req.session as any).user = {
+        (req.session as any).user = {
           id: result.user.id,
           role: result.user.role,
-          email: result.user.email
+          email: result.user.email,
         };
         return res.status(200).json({
           message: "Google login successful (Session)",
-          user: result.user
+          user: result.user,
         });
       } else {
         return res.status(200).json({
@@ -125,7 +123,7 @@ export class AuthController {
       }
 
       // Fetch fresh data from DB
-      const user = await AuthService.getMe(req.user.userId);
+      const user = await AuthService.getMe(req.user.id);
 
       return res.status(200).json({
         message: "User Verified",
@@ -148,12 +146,12 @@ export class AuthController {
         (req.session as any).user = {
           id: result.user.id,
           role: result.user.role,
-          email: result.user.email
+          email: result.user.email,
         };
 
         return res.status(200).json({
           message: "Account Verified & Logged In (Session)",
-          user: result.user
+          user: result.user,
         });
       } else {
         // Mobile users get the permanent token
@@ -195,7 +193,7 @@ export class AuthController {
 
       return res.status(200).json({
         message: "OTP sent to email for password reset",
-        token: result.token, 
+        token: result.token,
       });
     } catch (err: any) {
       return res.status(400).json({ error: err.message });
@@ -241,11 +239,11 @@ export class AuthController {
   static async updatePushToken(req: Request, res: Response) {
     try {
       const { token } = req.body;
-      
+
       // Use req.user (attached by middleware)
       if (!req.user) throw new Error("Unauthorized");
 
-      await AuthService.updatePushToken(req.user.userId, token);
+      await AuthService.updatePushToken(req.user.id, token);
 
       return res.json({ success: true });
     } catch (err: any) {

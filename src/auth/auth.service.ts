@@ -250,7 +250,7 @@ export class AuthService {
     const token = jwt.sign(
       { userId: user.id, purpose: "RESET_PASSWORD" },
       process.env.JWT_SECRET as string,
-      { expiresIn: "30m" } 
+      { expiresIn: "24h" } 
     );
 
     return { message: "OTP sent to email", token };

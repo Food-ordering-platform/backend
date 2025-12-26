@@ -36,48 +36,16 @@ export class AuthController {
   // ------------------ LOGIN (HYBRID) ------------------
   static async login(req: Request, res: Response) {
     try {
-      // Ensure your loginSchema allows 'clientType'
       const data = loginSchema.parse(req.body);
-      const clientType = req.body.clientType || "mobile"; // Default to mobile
-
       const result = await AuthService.login(data.email, data.password);
 
-      // A. Check if OTP is required (Account not verified)
-      if (result.requireOtp) {
-        return res.status(200).json({
-          message: "Account not verified. OTP sent.",
-          requireOtp: true,
-          token: result.token, // Temp token for verification
-          user: {
-            id: result.user.id,
-            email: result.user.email,
-            role: result.user.role,
-          },
-        });
-      }
-
-      // B. HYBRID AUTHENTICATION
-      if (clientType === "web") {
-        // --- WEB PATH (SESSION) ---
-        // Save user to session. Server automatically sends "set-cookie" header.
-        (req.session as any).user = {
-          id: result.user.id,
-          role: result.user.role,
-          email: result.user.email,
-        };
-
-        return res.status(200).json({
-          message: "Login successful (Session Active)",
-          user: result.user,
-          // NO TOKEN RETURNED FOR WEB
-        });
-      } else {
-        // --- MOBILE PATH (JWT) ---
-        return res.status(200).json({
-          message: "Login successful (Token Issued)",
-          result, // Contains token and user
-        });
-      }
+      // We ALWAYS return the token now. Web will store it in localStorage.
+      return res.status(200).json({
+        message: "Login successful",
+        token: result.token, 
+        user: result.user,
+        requireOtp: result.requireOtp
+      });
     } catch (err: any) {
       return res.status(400).json({ error: err.message });
     }
@@ -137,26 +105,14 @@ export class AuthController {
   // ------------------ VERIFY OTP (HYBRID) ------------------
   static async verifyOtp(req: Request, res: Response) {
     try {
-      const { token, code, clientType } = req.body;
+      const { token, code } = req.body;
       const result = await AuthService.verifyOtp(token, code);
 
-      // HYBRID LOGIC
-      // If a Web user just verified their account, they should be logged in immediately (Session)
-      if (clientType === "web") {
-        (req.session as any).user = {
-          id: result.user.id,
-          role: result.user.role,
-          email: result.user.email,
-        };
-
-        return res.status(200).json({
-          message: "Account Verified & Logged In (Session)",
-          user: result.user,
-        });
-      } else {
-        // Mobile users get the permanent token
-        return res.status(200).json(result);
-      }
+      return res.status(200).json({
+        message: "Account verified successfully",
+        token: result.token, // Permanent JWT
+        user: result.user
+      });
     } catch (err: any) {
       return res.status(400).json({ error: err.message });
     }

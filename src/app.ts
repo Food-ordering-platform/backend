@@ -26,25 +26,12 @@ const allowedOrigins = ["http://localhost:3000", "http://127.0.0.1:3000", "https
 
 app.use(
   cors({
-    origin: function (origin, callback) {
-      // CASE A: Mobile Apps / Postman (Requests with no Origin header)
-      // We allow these because mobile apps don't have a domain name.
-      if (!origin) return callback(null, true);
-
-      // CASE B: Web Frontend (Requests WITH Origin header)
-      // We must check if they are in our whitelist to allow Cookies/Sessions.
-      if (allowedOrigins.indexOf(origin) !== -1) {
-        return callback(null, true);
-      } else {
-        const msg = "The CORS policy for this site does not allow access from the specified Origin.";
-        return callback(new Error(msg), false);
-      }
-    },
+    origin: ["http://localhost:3000", "https://choweazy.vercel.app"],
     methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
-    credentials: true, // This allows the Web Frontend to send/receive Cookies
+    allowedHeaders: ["Content-Type", "Authorization"],
   })
 );
+
 
 app.use(morgan("dev"));
 
@@ -59,25 +46,6 @@ app.use((req, res, next) => {
 
 app.use(express.urlencoded({ extended: true }));
 
-// 4. Session Middleware
-app.use(
-  session({
-    store: new PgStore({
-      pool: pool,
-      tableName: "session", // Make sure this matches your Prisma map
-      createTableIfMissing: true,
-    }),
-    secret: process.env.JWT_SECRET as string, // Using JWT_SECRET as session secret
-    resave: false,
-    saveUninitialized: false,
-    cookie: {
-      maxAge: 30 * 24 * 60 * 60 * 1000, // 30 Days
-      httpOnly: true, // Security: JavaScript cannot read this cookie
-      secure: process.env.NODE_ENV === "production", // HTTPS only in production
-      sameSite: "none",
-    },
-  })
-);
 
 // 5. Routes
 app.use("/api/auth", authRouter);

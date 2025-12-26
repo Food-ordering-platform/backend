@@ -44,6 +44,17 @@ model Otp {
   used      Boolean  @default(false)
 }
 
+// ================= SESSIONS (System) =================
+
+model Session {
+  sid    String   @id
+  sess   Json
+  expire DateTime
+
+  @@map("session")  // Important: Rename table to lowercase "session" for the library
+  @@index([expire]) // Adds performance index for clearing expired sessions
+}
+
 // ================= RESTAURANT MANAGEMENT =================
 
 model Restaurant {

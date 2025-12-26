@@ -1,11 +1,12 @@
 import { Request, Response } from "express";
 import { AuthService } from "./auth.service";
 import { registerSchema, loginSchema } from "./auth.validator";
-import jwt from "jsonwebtoken";
 import { error } from "console";
 
 export class AuthController {
-  // Register a new user (Customer or Vendor)
+  
+  // ------------------ REGISTER ------------------
+  // (Mostly unchanged, returns a temp token for OTP flow)
   static async register(req: Request, res: Response) {
     try {
       const data = registerSchema.parse(req.body);
@@ -26,25 +27,28 @@ export class AuthController {
           role: user.role,
           isVerified: user.isVerified,
         },
-        token, // frontend uses this for verify-otp flow
+        token, // Frontend uses this for verify-otp flow (Short-lived)
       });
     } catch (err: any) {
       return res.status(400).json({ error: err.message });
     }
   }
 
-  // Login a user
- static async login(req: Request, res: Response) {
+  // ------------------ LOGIN (HYBRID) ------------------
+  static async login(req: Request, res: Response) {
     try {
-      const data = loginSchema.parse(req.body);
+      // Ensure your loginSchema allows 'clientType'
+      const data = loginSchema.parse(req.body); 
+      const clientType = req.body.clientType || "mobile"; // Default to mobile
+
       const result = await AuthService.login(data.email, data.password);
 
-      // [MODIFIED] Check if OTP is required
+      // A. Check if OTP is required (Account not verified)
       if (result.requireOtp) {
         return res.status(200).json({
           message: "Account not verified. OTP sent.",
-          requireOtp: true, // Frontend checks this
-          token: result.token,
+          requireOtp: true, 
+          token: result.token, // Temp token for verification
           user: {
             id: result.user.id,
             email: result.user.email,
@@ -53,47 +57,75 @@ export class AuthController {
         });
       }
 
-      return res.status(200).json({
-        message: "Login successful",
-        result,
-      });
+      // B. HYBRID AUTHENTICATION
+      if (clientType === "web") {
+        // --- WEB PATH (SESSION) ---
+        // Save user to session. Server automatically sends "set-cookie" header.
+        (req.session as any).user = {
+          id: result.user.id,
+          role: result.user.role,
+          email: result.user.email
+        };
+
+        return res.status(200).json({
+          message: "Login successful (Session Active)",
+          user: result.user
+          // NO TOKEN RETURNED FOR WEB
+        });
+      } else {
+        // --- MOBILE PATH (JWT) ---
+        return res.status(200).json({
+          message: "Login successful (Token Issued)",
+          result, // Contains token and user
+        });
+      }
+
     } catch (err: any) {
       return res.status(400).json({ error: err.message });
     }
   }
   
-  // Google Login
+  // ------------------ GOOGLE LOGIN ------------------
   static async googleLogin(req: Request, res: Response) {
     try {
-      const { token } = req.body;
+      const { token, clientType } = req.body; // Add clientType to body
       if (!token) throw new Error("Google token is required");
 
       const result = await AuthService.loginWithGoogle(token);
 
-      return res.status(200).json({
-        message: "Google login successful",
-        result,
-      });
+      // HYBRID AUTH FOR GOOGLE
+      if (clientType === "web") {
+         (req.session as any).user = {
+          id: result.user.id,
+          role: result.user.role,
+          email: result.user.email
+        };
+        return res.status(200).json({
+          message: "Google login successful (Session)",
+          user: result.user
+        });
+      } else {
+        return res.status(200).json({
+          message: "Google login successful (Token)",
+          result,
+        });
+      }
     } catch (err: any) {
       return res.status(400).json({ error: err.message });
     }
   }
 
-  //Get current user (Validate Token)
+  // ------------------ GET ME (VALIDATE SESSION/TOKEN) ------------------
   static async getMe(req: Request, res: Response) {
     try {
-      //1. Extracct token form authorization header
-      const authHeader = req.headers.authorization;
-      if (!authHeader || !authHeader.startsWith("Bearer")) {
-        throw new Error("No token Provided");
+      // The Middleware has already done the heavy lifting!
+      // It checked the Cookie OR the Header and put the user in req.user
+      if (!req.user) {
+        throw new Error("Unauthorized");
       }
-      const token = authHeader.split(" ")[1];
-      // 2. Verify Token
-      const decoded = jwt.verify(token, process.env.JWT_SECRET as string) as {
-        userId: string;
-      };
-      // 3. Check if user still exists in DB
-      const user = await AuthService.getMe(decoded.userId);
+
+      // Fetch fresh data from DB
+      const user = await AuthService.getMe(req.user.userId);
 
       return res.status(200).json({
         message: "User Verified",
@@ -104,19 +136,56 @@ export class AuthController {
     }
   }
 
-  // Verify OTP
+  // ------------------ VERIFY OTP (HYBRID) ------------------
   static async verifyOtp(req: Request, res: Response) {
     try {
-      const { token, code } = req.body;
+      const { token, code, clientType } = req.body;
       const result = await AuthService.verifyOtp(token, code);
 
-      return res.status(200).json(result);
+      // HYBRID LOGIC
+      // If a Web user just verified their account, they should be logged in immediately (Session)
+      if (clientType === "web") {
+        (req.session as any).user = {
+          id: result.user.id,
+          role: result.user.role,
+          email: result.user.email
+        };
+
+        return res.status(200).json({
+          message: "Account Verified & Logged In (Session)",
+          user: result.user
+        });
+      } else {
+        // Mobile users get the permanent token
+        return res.status(200).json(result);
+      }
     } catch (err: any) {
       return res.status(400).json({ error: err.message });
     }
   }
 
-  // Forgot Password (send OTP to email)
+  // ------------------ LOGOUT (NEW) ------------------
+  static async logout(req: Request, res: Response) {
+    // 1. Destroy Session (Web)
+    if (req.session) {
+      req.session.destroy((err) => {
+        if (err) {
+          return res.status(500).json({ message: "Could not log out" });
+        }
+        res.clearCookie("connect.sid"); // Clear the cookie from browser
+        return res.status(200).json({ message: "Logged out successfully" });
+      });
+    } else {
+      // 2. Token Logout (Mobile)
+      // Since tokens are stateless, we just tell the client "Success".
+      // The client must delete the token from storage.
+      return res.status(200).json({ message: "Logged out successfully" });
+    }
+  }
+
+  // ------------------ PASSWORD RESET FLOW (UNCHANGED) ------------------
+  // These use short-lived tokens, not sessions, so they remain the same.
+
   static async forgotPassword(req: Request, res: Response) {
     try {
       const { email } = req.body;
@@ -126,14 +195,13 @@ export class AuthController {
 
       return res.status(200).json({
         message: "OTP sent to email for password reset",
-        token: result.token, // short-lived JWT for reset flow
+        token: result.token, 
       });
     } catch (err: any) {
       return res.status(400).json({ error: err.message });
     }
   }
 
-  // Verify Reset OTP
   static async verifyResetOtp(req: Request, res: Response) {
     try {
       const { token, code } = req.body;
@@ -147,7 +215,6 @@ export class AuthController {
     }
   }
 
-  // Reset Password
   static async resetPassword(req: Request, res: Response) {
     try {
       const { token, newPassword, confirmPassword } = req.body;
@@ -170,23 +237,15 @@ export class AuthController {
     }
   }
 
-  //------------------PUSH NOTIFICATION FOR VENDORS-------------------------------//
-  // ... existing methods ...
-
-  // ✅ ADD THIS METHOD
+  // ------------------ PUSH NOTIFICATION ------------------
   static async updatePushToken(req: Request, res: Response) {
     try {
       const { token } = req.body;
       
-      // Get user ID from the token (Middleware usually attaches this)
-      // If your middleware attaches to req.user, use that. 
-      // Based on your getMe code:
-      const authHeader = req.headers.authorization;
-      if (!authHeader) throw new Error("No token");
-      const jwtToken = authHeader.split(" ")[1];
-      const decoded = jwt.verify(jwtToken, process.env.JWT_SECRET as string) as { userId: string };
+      // Use req.user (attached by middleware)
+      if (!req.user) throw new Error("Unauthorized");
 
-      await AuthService.updatePushToken(decoded.userId, token);
+      await AuthService.updatePushToken(req.user.userId, token);
 
       return res.json({ success: true });
     } catch (err: any) {
@@ -194,4 +253,3 @@ export class AuthController {
     }
   }
 }
-

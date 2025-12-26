@@ -12,28 +12,46 @@ declare global {
 
 export const authMiddleware = (req: Request, res: Response, next: NextFunction) => {
   try {
-    const authHeader = req.headers.authorization;
-    
-    if (!authHeader || !authHeader.startsWith("Bearer ")) {
-      return res.status(401).json({ 
-        success: false, 
-        message: "Authorization token missing or invalid" 
-      });
+    // ---------------------------------------------------------
+    // POCKET 1: CHECK SESSION (Web Users)
+    // ---------------------------------------------------------
+    // If the browser sent a cookie, express-session parsed it into req.session.user
+    if (req.session && (req.session as any).user) {
+      req.user = { 
+        userId: (req.session as any).user.id, 
+        role: (req.session as any).user.role 
+      };
+      return next(); // Pass!
     }
 
-    const token = authHeader.split(" ")[1];
+    // ---------------------------------------------------------
+    // POCKET 2: CHECK TOKEN (Mobile Users)
+    // ---------------------------------------------------------
+    const authHeader = req.headers.authorization;
     
-    // Verify Token
-    const decoded = jwt.verify(token, process.env.JWT_SECRET as string) as { userId: string; role: string };
+    if (authHeader && authHeader.startsWith("Bearer ")) {
+      const token = authHeader.split(" ")[1];
+      
+      // Verify Token
+      const decoded = jwt.verify(token, process.env.JWT_SECRET as string) as { userId: string; role: string };
 
-    // Attach user to request object
-    req.user = decoded;
+      // Attach user to request object
+      req.user = decoded;
+      return next(); // Pass!
+    }
 
-    next(); // Pass control to the controller
+    // ---------------------------------------------------------
+    // NO PASS FOUND
+    // ---------------------------------------------------------
+    return res.status(401).json({ 
+      success: false, 
+      message: "Unauthorized. Please login." 
+    });
+
   } catch (error) {
     return res.status(401).json({ 
       success: false, 
-      message: "Invalid or expired token" 
+      message: "Invalid or expired session/token" 
     });
   }
 };

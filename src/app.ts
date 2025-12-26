@@ -1,6 +1,9 @@
 import express from "express";
 import cors from "cors";
 import morgan from "morgan";
+import session from "express-session";
+import pgSession from "connect-pg-simple";
+import { Pool } from "pg";
 
 import authRouter from "./auth/auth.route";
 import restaurantRouter from "./restuarant/restaurant.route";
@@ -9,25 +12,52 @@ import paymentRouter from "./payment/payment.route";
 
 const app = express();
 
+// --- ADD THIS BLOCK BEFORE ROUTES ---
+const PgStore = pgSession(session);
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+});
+
 // [FIX] Explicit CORS to prevent "Network Error" on preflight requests
-app.use(cors({
-  origin: "*", // Allow all origins (Mobile apps often need this)
-  methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization"],
-  credentials: true
-}));
+app.use(
+  cors({
+    origin: "*", // Allow all origins (Mobile apps often need this)
+    methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+    credentials: true,
+  })
+);
 
 app.use(morgan("dev"));
 
-// Apply express.json() 
+// Apply express.json()
 // We keep your logic to skip it for webhooks
 app.use((req, res, next) => {
   if (req.path.startsWith("/api/payment/webhook")) {
-    next(); 
+    next();
   } else {
-    express.json()(req, res, next); 
+    express.json()(req, res, next);
   }
 });
+
+app.use(
+  session({
+    store: new PgStore({
+      pool: pool,
+      tableName: "session",
+      createTableIfMissing: true,
+    }),
+    secret: process.env.JWT_SECRET as string, // Or a separate SESSION_SECRET
+    resave: false,
+    saveUninitialized: false,
+    cookie: {
+      maxAge: 30 * 24 * 60 * 60 * 1000, // 30 Days
+      httpOnly: true, // Security: JS cannot read this
+      secure: process.env.NODE_ENV === "production", // HTTPS only in prod
+      sameSite: process.env.NODE_ENV === "production" ? "none" : "lax", // Adjust based on your frontend domain
+    },
+  })
+);
 
 // Routes
 app.use("/api/auth", authRouter);
@@ -38,21 +68,28 @@ app.use("/api/payment", paymentRouter);
 // [CRITICAL FIX] Global Error Handler
 // This catches backend crashes (like Multer errors) and sends a JSON response
 // preventing the "Network Error" on the frontend.
-app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
-  console.error("🔥 Global Backend Error:", err); // Check your Railway logs for this!
-  
-  // Handle Multer File Size Error specifically
-  if (err.code === "LIMIT_FILE_SIZE") {
-    return res.status(400).json({
+app.use(
+  (
+    err: any,
+    req: express.Request,
+    res: express.Response,
+    next: express.NextFunction
+  ) => {
+    console.error("🔥 Global Backend Error:", err); // Check your Railway logs for this!
+
+    // Handle Multer File Size Error specifically
+    if (err.code === "LIMIT_FILE_SIZE") {
+      return res.status(400).json({
+        success: false,
+        message: "File is too large. Max limit is 5MB.",
+      });
+    }
+
+    res.status(err.status || 500).json({
       success: false,
-      message: "File is too large. Max limit is 5MB.",
+      message: err.message || "Internal Server Error",
     });
   }
-
-  res.status(err.status || 500).json({
-    success: false,
-    message: err.message || "Internal Server Error",
-  });
-});
+);
 
 export default app;

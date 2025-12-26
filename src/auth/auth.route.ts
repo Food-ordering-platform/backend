@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { AuthController } from "./auth.controller";
+import { authMiddleware } from "./auth.middleware";
 
 const router = Router();
 
@@ -12,7 +13,7 @@ router.post("/login", AuthController.login);
 router.post("/google", AuthController.googleLogin);
 
 //Verify current user
-router.get("/me", AuthController.getMe)
+router.get("/me", authMiddleware, AuthController.getMe)
 
 // Verify registration OTP
 router.post("/verify-otp", AuthController.verifyOtp);

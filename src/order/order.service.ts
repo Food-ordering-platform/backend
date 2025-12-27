@@ -6,11 +6,8 @@ import { sendPushNotification } from "../utils/notification";
 import { getSocketIO } from "../utils/socket";
 
 const prisma = new PrismaClient();
-
-// Platform Settings
 const PLATFORM_DELIVERY_FEE = 500;
 
-// Helper to generate a unique reference
 function generateReference(): string {
   return randomBytes(12).toString("hex");
 }
@@ -22,31 +19,27 @@ export class OrderService {
     restaurantId: string,
     totalAmount: number,
     deliveryAddress: string,
-    deliveryNotes: string | undefined, // <--- ✅ ADDED PARAMETER
+    deliveryNotes: string | undefined,
     items: { menuItemId: string; quantity: number; price: number }[],
     customerName: string,
     customerEmail: string
   ) {
-    // 1. Fetch Restaurant (Just to ensure it exists)
+    // 1. Fetch Restaurant
     const restaurant = await prisma.restaurant.findUnique({
       where: { id: restaurantId },
-      include:{owner:true}
+      include: { owner: true }
     });
 
-    if (!restaurant) {
-      throw new Error("Restaurant not found");
-    }
+    if (!restaurant) throw new Error("Restaurant not found");
 
-    // 2. Fetch Menu Items to get names for the Snapshot
+    // 2. Fetch Menu Items
     const menuItemIds = items.map((item) => item.menuItemId);
     const dbMenuItems = await prisma.menuItem.findMany({
       where: { id: { in: menuItemIds } },
     });
-
-    // Create a map for quick lookup: ID -> Item Data
     const itemsMap = new Map(dbMenuItems.map((item) => [item.id, item]));
 
-    // 3. Generate a Unique Reference
+    // 3. Unique Reference
     let reference = generateReference();
     let referenceExists = true;
     while (referenceExists) {
@@ -55,7 +48,7 @@ export class OrderService {
       else reference = generateReference();
     }
 
-    // 4. Create order in DB with Snapshots and Reference
+    // 4. Create Order (Status: PENDING)
     const order = await prisma.order.create({
       data: {
         customerId,
@@ -65,18 +58,15 @@ export class OrderService {
         paymentStatus: "PENDING",
         status: "PENDING",
         deliveryAddress,
-        deliveryNotes: deliveryNotes || null, // <--- ✅ SAVED TO DB
+        deliveryNotes: deliveryNotes || null,
         reference,
         items: {
           create: items.map((i) => {
             const originalItem = itemsMap.get(i.menuItemId);
-            if (!originalItem)
-              throw new Error(`Menu item ${i.menuItemId} not found`);
-
+            if (!originalItem) throw new Error(`Menu item ${i.menuItemId} not found`);
             return {
-              // We only store the ID loosely now, no relation constraint
               menuItemId: i.menuItemId,
-              menuItemName: originalItem.name, // <--- SNAPSHOT: Name
+              menuItemName: originalItem.name,
               quantity: i.quantity,
               price: i.price,
             };
@@ -86,34 +76,8 @@ export class OrderService {
       include: { items: true },
     });
 
-    if (restaurant.owner?.pushToken) {
-      console.log("🔔 Sending Push to Vendor...");
-      sendPushNotification(
-        restaurant.owner.pushToken,
-        "New Order Received! 📝",
-        `Order #${order.reference.slice(0, 4).toUpperCase()} worth ₦${totalAmount}`,
-        { orderId: order.id }
-      );
-    }
-
-    // Send "Order Received" Email immediately
-    if(customerEmail){
-      sendOrderStatusEmail(
-        customerEmail, customerName, order.id, "PENDING"
-      ).catch(e => console.log("Initial order email failed", e));
-    }
-    try {
-      const io = getSocketIO();
-      // Send to the Restaurant's specific room
-      io.to(`restaurant_${restaurantId}`).emit("new_order", {
-        message: "New Order Received! 🔔",
-        orderId: order.id,
-        totalAmount
-      });
-      console.log(`Socket emitted to restaurant_${restaurantId}`);
-    } catch (error) {
-      console.log("Socket emit failed", error); 
-    }
+    // ❌ ALL NOTIFICATIONS REMOVED FROM HERE
+    // No Push, No Socket, No Email. Silence until payment.
 
     // 5. Initialize payment
     const checkoutUrl = await PaymentService.initiatePayment(
@@ -126,7 +90,64 @@ export class OrderService {
     return { order, checkoutUrl };
   }
 
-  // Get all orders for a customer
+  // 👇 ✅ EVERYTHING HAPPENS HERE NOW
+  static async processSuccessfulPayment(reference: string) {
+    // 1. Fetch order with Restaurant Owner AND Customer info
+    const order = await prisma.order.findUnique({
+      where: { reference },
+      include: { 
+        restaurant: { include: { owner: true } },
+        customer: true // <--- ✅ Need this to email the customer
+      }
+    });
+
+    if (!order) return null;
+    if (order.paymentStatus === "PAID") return order; // Idempotency check
+
+    // 2. Update Status to PAID
+    const updatedOrder = await prisma.order.update({
+      where: { id: order.id },
+      data: { paymentStatus: "PAID" }
+    });
+
+    // 3. 📧 Send "Order Placed" Email to Customer
+    if (order.customer && order.customer.email) {
+      console.log(`📧 Sending 'Order Placed' email to ${order.customer.email}`);
+      sendOrderStatusEmail(
+        order.customer.email, 
+        order.customer.name, 
+        order.id, 
+        "PENDING" // This triggers the "Order Placed" template in your mailer
+      ).catch(e => console.log("Payment success email failed", e));
+    }
+
+    // 4. 🔔 Send Push Notification to Vendor
+    if (order.restaurant?.owner?.pushToken) {
+      console.log("🔔 Payment Confirmed! Sending Push to Vendor...");
+      sendPushNotification(
+        order.restaurant.owner.pushToken,
+        "New Order Paid! 💰",
+        `Order #${order.reference.slice(0, 4).toUpperCase()} confirmed. ₦${order.totalAmount}`,
+        { orderId: order.id }
+      );
+    }
+
+    // 5. 🔌 Emit Socket Event to Vendor Dashboard
+    try {
+      const io = getSocketIO();
+      io.to(`restaurant_${order.restaurantId}`).emit("new_order", {
+        message: "New Order Paid! 🔔",
+        orderId: order.id,
+        totalAmount: order.totalAmount
+      });
+      console.log(`Socket emitted to restaurant_${order.restaurantId}`);
+    } catch (error) {
+      console.log("Socket emit failed", error); 
+    }
+
+    return updatedOrder;
+  }
+
   static async getOrdersByCustomer(customerId: string) {
     return prisma.order.findMany({
       where: { customerId },
@@ -137,14 +158,12 @@ export class OrderService {
         deliveryFee: true,
         paymentStatus: true,
         status: true,
-        // We can still get the restaurant details via relation
         restaurant: { select: { name: true, imageUrl: true } },
         items: {
           select: {
             quantity: true,
             price: true,
-            menuItemName: true, // <--- Retrieve Snapshot Name
-            // No menuItem relation
+            menuItemName: true,
           },
         },
         createdAt: true,
@@ -176,12 +195,8 @@ export class OrderService {
     });
   }
 
-  //---------------------LOGIC FOR MOBILE VENDOR APP -------------------------------//
-
-  // 1️⃣ VENDOR DASHBOARD: Get all orders for the restaurant
   static async getVendorOrders(restaurantId: string) {
     return await prisma.order.findMany({
-      // Only show orders that are PAID or REFUNDED (History)
       where: { restaurantId, paymentStatus: { in : ["PAID", "REFUNDED"] } },
       include: {
         items: true,
@@ -191,14 +206,12 @@ export class OrderService {
     });
   }
 
-  // 2. UPDATE ORDER STATUS BASED ON VENDOR ACTIONS
   static async updateOrderStatus(orderId: string, status: OrderStatus) {
     const order = await prisma.order.findUnique({ where: { id: orderId } });
     if (!order) throw new Error("Order not found");
 
     let newPaymentStatus = order.paymentStatus;
 
-    // SAFETY NET: If Vendor Rejects (CANCELLED) & User Paid -> Auto Refund
     if (status === "CANCELLED" && order.paymentStatus === "PAID") {
       try {
         console.log(`Auto-refunding Order ${order.reference}...`);
@@ -209,16 +222,13 @@ export class OrderService {
       }
     }
     
-    // 3. Update Database AND Return Customer Info
     const updatedOrder = await prisma.order.update({
       where: { id: orderId },
       data: { status, paymentStatus: newPaymentStatus },
-      include: { customer: true }, // <--- CRITICAL: Get customer email
+      include: { customer: true }, 
     });
 
-    // 4. [NEW] Send Notification
     if (updatedOrder.customer && updatedOrder.customer.email) {
-      // We don't await this so it runs in background (optional)
       sendOrderStatusEmail(
         updatedOrder.customer.email,
         updatedOrder.customer.name,

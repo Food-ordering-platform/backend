@@ -12,6 +12,8 @@ export class RestaurantController {
       email: body.email,
       // Parse numbers safely
       prepTime: body.prepTime ? parseInt(body.prepTime, 10) : undefined,
+      latitude:body.latitude ? parseFloat(body.latitude) :  undefined,
+      longitude:body.longitude ? parseFloat(body.longitude) : undefined,
       minimumOrder: body.minimumOrder
         ? parseFloat(body.minimumOrder)
         : undefined,

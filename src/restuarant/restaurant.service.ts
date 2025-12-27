@@ -38,6 +38,8 @@ export class RestaurantService {
         prepTime: data.prepTime || 20,
         minimumOrder: data.minimumOrder ?? 0.0,
         isOpen: data.isOpen ?? true,
+        latitude: data.latitude,
+        longitude: data.longitude
       },
     });
   }

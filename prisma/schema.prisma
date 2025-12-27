@@ -80,6 +80,9 @@ model Restaurant {
   prepTime     Int           @default(20) 
   minimumOrder Float         @default(0.0) // Can keep this if vendors want to enforce minimums
 
+  latitude     Float?        
+  longitude    Float?
+
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
 }
@@ -136,6 +139,9 @@ model Order {
   
   deliveryAddress String
   deliveryNotes   String?       
+
+  deliveryLatitude  Float?
+  deliveryLongitude Float?
 
   reference       String        @unique 
   token           String?       @unique 

@@ -6,27 +6,32 @@ import { sendPushNotification } from "../utils/notification";
 import { getSocketIO } from "../utils/socket";
 
 const prisma = new PrismaClient();
-const PLATFORM_DELIVERY_FEE = 500;
+
+// 💰 PRICING CONSTANTS
+const PLATFORM_DELIVERY_FEE = 1500; // Fixed delivery fee
+const PLATFORM_FEE = 350;           // Service charge
 
 function generateReference(): string {
   return randomBytes(12).toString("hex");
 }
 
 export class OrderService {
-  // Create order AND initialize payment
+  
+  // =================================================================
+  // 1. CREATE ORDER (Calculates Total & Initializes Payment)
+  // =================================================================
   static async createOrderWithPayment(
     customerId: string,
     restaurantId: string,
-    totalAmount: number,
     deliveryAddress: string,
     deliveryNotes: string | undefined,
-    deliveryLatitude : number | undefined,
-    deliveryLongitude : number | undefined,
-    items: { menuItemId: string; quantity: number; price: number }[],
+    deliveryLatitude: number | undefined,
+    deliveryLongitude: number | undefined,
+    items: { menuItemId: string; quantity: number }[], // Price removed from input
     customerName: string,
     customerEmail: string
   ) {
-    // 1. Fetch Restaurant
+    // A. Verify Restaurant
     const restaurant = await prisma.restaurant.findUnique({
       where: { id: restaurantId },
       include: { owner: true }
@@ -34,14 +39,35 @@ export class OrderService {
 
     if (!restaurant) throw new Error("Restaurant not found");
 
-    // 2. Fetch Menu Items
+    // B. Verify Items & Calculate Subtotal (Source of Truth)
     const menuItemIds = items.map((item) => item.menuItemId);
     const dbMenuItems = await prisma.menuItem.findMany({
       where: { id: { in: menuItemIds } },
     });
     const itemsMap = new Map(dbMenuItems.map((item) => [item.id, item]));
 
-    // 3. Unique Reference
+    let subtotal = 0;
+    
+    // Prepare items for DB creation and sum up price
+    const validItems = items.map((i) => {
+      const originalItem = itemsMap.get(i.menuItemId);
+      if (!originalItem) throw new Error(`Menu item ${i.menuItemId} not found`);
+      
+      const itemTotal = originalItem.price * i.quantity;
+      subtotal += itemTotal;
+
+      return {
+        menuItemId: i.menuItemId,
+        menuItemName: originalItem.name,
+        quantity: i.quantity,
+        price: originalItem.price, // Use DB price, not frontend price
+      };
+    });
+
+    // C. Calculate Final Total
+    const finalTotal = subtotal + PLATFORM_DELIVERY_FEE + PLATFORM_FEE;
+
+    // D. Generate Reference
     let reference = generateReference();
     let referenceExists = true;
     while (referenceExists) {
@@ -50,42 +76,30 @@ export class OrderService {
       else reference = generateReference();
     }
 
-    // 4. Create Order (Status: PENDING)
+    // E. Save Order to Database
     const order = await prisma.order.create({
       data: {
         customerId,
         restaurantId,
-        totalAmount,
+        totalAmount: finalTotal,      // ✅ Secure Calculation
         deliveryFee: PLATFORM_DELIVERY_FEE,
         paymentStatus: "PENDING",
         status: "PENDING",
         deliveryAddress,
         deliveryNotes: deliveryNotes || null,
-        deliveryLatitude,
-        deliveryLongitude,
+        deliveryLatitude,             // ✅ Coordinates Saved
+        deliveryLongitude,            // ✅ Coordinates Saved
         reference,
         items: {
-          create: items.map((i) => {
-            const originalItem = itemsMap.get(i.menuItemId);
-            if (!originalItem) throw new Error(`Menu item ${i.menuItemId} not found`);
-            return {
-              menuItemId: i.menuItemId,
-              menuItemName: originalItem.name,
-              quantity: i.quantity,
-              price: i.price,
-            };
-          }),
+          create: validItems,
         },
       },
       include: { items: true },
     });
 
-    // ❌ ALL NOTIFICATIONS REMOVED FROM HERE
-    // No Push, No Socket, No Email. Silence until payment.
-
-    // 5. Initialize payment
+    // F. Initialize Payment with Paystack
     const checkoutUrl = await PaymentService.initiatePayment(
-      totalAmount,
+      finalTotal,
       customerName,
       customerEmail,
       order.reference
@@ -94,38 +108,40 @@ export class OrderService {
     return { order, checkoutUrl };
   }
 
-  // 👇 ✅ EVERYTHING HAPPENS HERE NOW
+  // =================================================================
+  // 2. PROCESS PAYMENT SUCCESS (Webhooks/Verify Endpoint)
+  // =================================================================
   static async processSuccessfulPayment(reference: string) {
-    // 1. Fetch order with Restaurant Owner AND Customer info
+    // Fetch order with all necessary relations for notifications
     const order = await prisma.order.findUnique({
       where: { reference },
       include: { 
         restaurant: { include: { owner: true } },
-        customer: true // <--- ✅ Need this to email the customer
+        customer: true 
       }
     });
 
     if (!order) return null;
     if (order.paymentStatus === "PAID") return order; // Idempotency check
 
-    // 2. Update Status to PAID
+    // Update Status to PAID
     const updatedOrder = await prisma.order.update({
       where: { id: order.id },
       data: { paymentStatus: "PAID" }
     });
 
-    // 3. 📧 Send "Order Placed" Email to Customer
+    // A. 📧 Send "Order Placed" Email to Customer
     if (order.customer && order.customer.email) {
       console.log(`📧 Sending 'Order Placed' email to ${order.customer.email}`);
       sendOrderStatusEmail(
         order.customer.email, 
         order.customer.name, 
         order.id, 
-        "PENDING" // This triggers the "Order Placed" template in your mailer
+        "PENDING" 
       ).catch(e => console.log("Payment success email failed", e));
     }
 
-    // 4. 🔔 Send Push Notification to Vendor
+    // B. 🔔 Send Push Notification to Vendor
     if (order.restaurant?.owner?.pushToken) {
       console.log("🔔 Payment Confirmed! Sending Push to Vendor...");
       sendPushNotification(
@@ -136,7 +152,7 @@ export class OrderService {
       );
     }
 
-    // 5. 🔌 Emit Socket Event to Vendor Dashboard
+    // C. 🔌 Emit Socket Event to Vendor Dashboard
     try {
       const io = getSocketIO();
       io.to(`restaurant_${order.restaurantId}`).emit("new_order", {
@@ -152,6 +168,9 @@ export class OrderService {
     return updatedOrder;
   }
 
+  // =================================================================
+  // 3. GET ORDERS BY CUSTOMER
+  // =================================================================
   static async getOrdersByCustomer(customerId: string) {
     return prisma.order.findMany({
       where: { customerId },
@@ -176,6 +195,9 @@ export class OrderService {
     });
   }
 
+  // =================================================================
+  // 4. GET SINGLE ORDER (By Reference)
+  // =================================================================
   static async getOrderByReference(reference: string) {
     return prisma.order.findUnique({
       where: { reference },
@@ -199,6 +221,9 @@ export class OrderService {
     });
   }
 
+  // =================================================================
+  // 5. GET VENDOR ORDERS (Mobile App Logic)
+  // =================================================================
   static async getVendorOrders(restaurantId: string) {
     return await prisma.order.findMany({
       where: { restaurantId, paymentStatus: { in : ["PAID", "REFUNDED"] } },
@@ -210,12 +235,16 @@ export class OrderService {
     });
   }
 
+  // =================================================================
+  // 6. UPDATE ORDER STATUS (Accept/Reject/Deliver)
+  // =================================================================
   static async updateOrderStatus(orderId: string, status: OrderStatus) {
     const order = await prisma.order.findUnique({ where: { id: orderId } });
     if (!order) throw new Error("Order not found");
 
     let newPaymentStatus = order.paymentStatus;
 
+    // Handle Refunds if Cancelled after Payment
     if (status === "CANCELLED" && order.paymentStatus === "PAID") {
       try {
         console.log(`Auto-refunding Order ${order.reference}...`);
@@ -226,12 +255,14 @@ export class OrderService {
       }
     }
     
+    // Update DB
     const updatedOrder = await prisma.order.update({
       where: { id: orderId },
       data: { status, paymentStatus: newPaymentStatus },
       include: { customer: true }, 
     });
 
+    // Notify Customer via Email
     if (updatedOrder.customer && updatedOrder.customer.email) {
       sendOrderStatusEmail(
         updatedOrder.customer.email,

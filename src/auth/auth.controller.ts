@@ -77,7 +77,6 @@ export class AuthController {
       res.status(401).json({ error: "Unauthorized: " + err.message });
     }
   }
-
   static async updateProfile(req: Request, res: Response) {
     try {
       if (!req.user) throw new Error("Unauthorized");
@@ -101,6 +100,8 @@ export class AuthController {
       return res.status(400).json({ error: err.message });
     }
   }
+
+  
 
   // ------------------ VERIFY OTP ------------------
   static async verifyOtp(req: Request, res: Response) {

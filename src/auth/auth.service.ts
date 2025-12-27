@@ -173,6 +173,36 @@ export class AuthService {
     return user;
   }
 
+  static async updateProfile(userId: string, data: { 
+    name?: string; 
+    phone?: string; 
+    address?: string; 
+    latitude?: number; 
+    longitude?: number; 
+  }) {
+    return await prisma.user.update({
+      where: { id: userId },
+      data: {
+        name: data.name,
+        phone: data.phone,
+        address: data.address,
+        latitude: data.latitude,
+        longitude: data.longitude,
+      },
+      select: {
+        id: true, 
+        name: true, 
+        email: true, 
+        phone: true, 
+        address: true, 
+        latitude: true, 
+        longitude: true,
+        role: true,
+        isVerified: true
+      }
+    });
+  }
+
   // ------------------ OTP UTILS ------------------
   static async generateOtp(userId: string) {
     const code = randomInt(100000, 999999).toString();
@@ -302,6 +332,7 @@ export class AuthService {
     }
   }
 
+  
   //------------------PUSH NOTIFICATION FOR VENDORS ---------------------------//
   // ... inside AuthService class
   static async updatePushToken(userId: string, token: string) {

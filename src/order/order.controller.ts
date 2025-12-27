@@ -9,7 +9,6 @@ export class OrderController {
       const { 
         customerId, 
         restaurantId, 
-        totalAmount, 
         deliveryAddress, 
         deliveryNotes, 
         deliveryLatitude,
@@ -20,7 +19,7 @@ export class OrderController {
       } = req.body;
 
       // Validate required fields
-      if (!customerId || !restaurantId || !totalAmount || !deliveryAddress || !items || !name || !email) {
+      if (!customerId || !restaurantId || !deliveryAddress || !items || !name || !email) {
         return res.status(400).json({ success: false, message: "Missing required fields" });
       }
 
@@ -28,7 +27,6 @@ export class OrderController {
       const { order, checkoutUrl } = await OrderService.createOrderWithPayment(
         customerId,
         restaurantId,
-        totalAmount,
         deliveryAddress,
         deliveryNotes, 
         deliveryLatitude,
@@ -45,6 +43,10 @@ export class OrderController {
           reference: order.reference,
           token: order.token, // Temporal code
           checkoutUrl,
+          amounts: {
+            total: order.totalAmount,
+            delivery: order.deliveryFee,
+          }
         },
       });
     } catch (err: any) {

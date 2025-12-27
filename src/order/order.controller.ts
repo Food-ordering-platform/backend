@@ -11,7 +11,9 @@ export class OrderController {
         restaurantId, 
         totalAmount, 
         deliveryAddress, 
-        deliveryNotes, // <--- ✅ ADDED
+        deliveryNotes, 
+        deliveryLatitude,
+        deliveryLongitude,
         items, 
         name, 
         email 
@@ -28,7 +30,9 @@ export class OrderController {
         restaurantId,
         totalAmount,
         deliveryAddress,
-        deliveryNotes, // <--- ✅ PASSED HERE
+        deliveryNotes, 
+        deliveryLatitude,
+        deliveryLongitude,
         items,
         name,
         email

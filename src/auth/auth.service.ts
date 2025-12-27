@@ -160,6 +160,8 @@ export class AuthService {
         email:true,
         role:true,
         isVerified:true,
+        latitude: true,  // 👈 Added
+        longitude: true,
         phone:true,
         // [FIX] Included restaurant relation here so frontend receives the ID
         restaurant: true
@@ -215,7 +217,7 @@ export class AuthService {
       const sessionToken = jwt.sign(
         { userId: user.id, role: user.role },
         process.env.JWT_SECRET as string,
-        { expiresIn: "7d" }
+        { expiresIn: "24h" }
       );
 
       return {

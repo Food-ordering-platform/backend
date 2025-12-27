@@ -20,6 +20,8 @@ export class OrderService {
     totalAmount: number,
     deliveryAddress: string,
     deliveryNotes: string | undefined,
+    deliveryLatitude : number | undefined,
+    deliveryLongitude : number | undefined,
     items: { menuItemId: string; quantity: number; price: number }[],
     customerName: string,
     customerEmail: string
@@ -59,6 +61,8 @@ export class OrderService {
         status: "PENDING",
         deliveryAddress,
         deliveryNotes: deliveryNotes || null,
+        deliveryLatitude,
+        deliveryLongitude,
         reference,
         items: {
           create: items.map((i) => {

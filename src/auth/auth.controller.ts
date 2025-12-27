@@ -78,6 +78,30 @@ export class AuthController {
     }
   }
 
+  static async updateProfile(req: Request, res: Response) {
+    try {
+      if (!req.user) throw new Error("Unauthorized");
+      
+      const { name, phone, address, latitude, longitude } = req.body;
+      
+      const updatedUser = await AuthService.updateProfile(req.user.id, {
+        name,
+        phone,
+        address,
+        latitude: latitude ? parseFloat(latitude) : undefined,
+        longitude: longitude ? parseFloat(longitude) : undefined,
+      });
+
+      return res.status(200).json({
+        success: true,
+        message: "Profile updated successfully",
+        user: updatedUser
+      });
+    } catch (err: any) {
+      return res.status(400).json({ error: err.message });
+    }
+  }
+
   // ------------------ VERIFY OTP ------------------
   static async verifyOtp(req: Request, res: Response) {
     try {

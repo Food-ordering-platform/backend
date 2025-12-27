@@ -6,6 +6,7 @@ import { randomBytes } from "crypto";
 import { sendOrderStatusEmail } from "../utils/mailer";
 import { sendPushNotification } from "../utils/notification";
 import { getSocketIO } from "../utils/socket";
+import { calculateDistance, calculateDeliveryFee } from "../utils/haversine";
 
 const prisma = new PrismaClient();
 
@@ -34,13 +35,30 @@ export class OrderService {
     customerName: string,
     customerEmail: string
   ) {
-    // A. Verify Restaurant
+    // A. Verify Restaurant and DeliveryFee
     const restaurant = await prisma.restaurant.findUnique({
       where: { id: restaurantId },
       include: { owner: true }
     });
 
     if (!restaurant) throw new Error("Restaurant not found");
+
+    let deliveryFee = 500; // Default fallback if coords missing (optional)
+
+    if (restaurant.latitude && restaurant.longitude && deliveryLatitude && deliveryLongitude) {
+        const distance = calculateDistance(
+            restaurant.latitude,
+            restaurant.longitude,
+            deliveryLatitude,
+            deliveryLongitude
+        );
+        deliveryFee = calculateDeliveryFee(distance);
+        console.log(`📏 Distance: ${distance}km | 🚚 Fee: ₦${deliveryFee}`);
+    } else {
+        // Handle edge case: If coords are missing, maybe reject order or use flat fee?
+        // For now, we'll proceed but ideally, you should enforce coords on frontend.
+        console.warn("⚠️ Missing coordinates for delivery calculation. Using default fee.");
+    }
 
     // B. Verify Items & Calculate Subtotal
     const menuItemIds = items.map((item) => item.menuItemId);
@@ -67,7 +85,7 @@ export class OrderService {
     });
 
     // C. Calculate Final Total (No Tax, just fees)
-    const finalTotal = subtotal + DELIVERY_FEE + PLATFORM_FEE;
+    const finalTotal = subtotal + deliveryFee + PLATFORM_FEE;
 
     // D. Generate Reference
     let reference = generateReference();
@@ -84,7 +102,7 @@ export class OrderService {
         customerId,
         restaurantId,
         totalAmount: finalTotal,      
-        deliveryFee: DELIVERY_FEE,
+        deliveryFee: deliveryFee,
         paymentStatus: "PENDING",
         status: "PENDING",
         deliveryAddress,

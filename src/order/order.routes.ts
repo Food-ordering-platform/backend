@@ -6,6 +6,8 @@ const router = Router();
 // Create a new order
 router.post("/", OrderController.createOrder);
 
+router.post("/quote", OrderController.getQuote);
+
 // Get all orders for a customer
 router.get("/customer/:customerId", OrderController.getAllOrders);
 

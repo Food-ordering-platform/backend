@@ -15,8 +15,13 @@ export class OrderController {
         deliveryLongitude,
         items, 
         name, 
-        email 
+        email,
+        idempotencyKey:bodyKey
       } = req.body;
+
+      // Also support standard header
+      const headerKey = req.headers['idempotency-key'] as string;
+      const idempotencyKey = bodyKey || headerKey;
 
       // Validate required fields
       if (!customerId || !restaurantId || !deliveryAddress || !items || !name || !email) {
@@ -33,7 +38,8 @@ export class OrderController {
         deliveryLongitude,
         items,
         name,
-        email
+        email,
+        idempotencyKey
       );
 
       return res.status(201).json({
@@ -118,7 +124,8 @@ export class OrderController {
     }
     catch (err: any) {
       console.error("Update order status error", err);
-      return res.status(500).json({ success: true, Message: err.message || "Server Error" });
+      const statusCode = err.message.includes("Invalid state Transition") ? 400 : 500
+      return res.status(statusCode).json({ success: true, Message: err.message || "Server Error" });
     }
   }
 }

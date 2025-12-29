@@ -146,6 +146,9 @@ model Order {
   deliveryLatitude  Float?
   deliveryLongitude Float?
 
+  idempotencyKey  String?       @unique
+  checkoutUrl     String?       // Store payment link to return on retry
+
   reference       String        @unique 
   token           String?       @unique 
 

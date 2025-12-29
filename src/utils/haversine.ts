@@ -1,5 +1,7 @@
 //Haversine formular for calculating distance between 2 points on the earth
 
+const TORTUOSITY_FACTOR = 1.5;
+
 function deg2rad(deg: number): number {
   return deg * (Math.PI / 180);
 }
@@ -20,7 +22,8 @@ export const calculateDistance = (
       Math.sin(dLon / 2) *
       Math.sin(dLon / 2);
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return R * c;
+  const airDistance =  R * c;
+  return airDistance  * TORTUOSITY_FACTOR
 };
 
 export const calculateDeliveryFee = (distanceKm: number) : number => {

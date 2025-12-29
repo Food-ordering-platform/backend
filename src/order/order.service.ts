@@ -7,6 +7,7 @@ import { sendOrderStatusEmail } from "../utils/mailer";
 import { sendPushNotification } from "../utils/notification";
 import { getSocketIO } from "../utils/socket";
 import { calculateDistance, calculateDeliveryFee } from "../utils/haversine";
+import { OrderStateMachine } from "../utils/order-state-machine";
 
 const prisma = new PrismaClient();
 
@@ -127,8 +128,6 @@ export class OrderService {
 
     return { order, checkoutUrl };
   }
-
-  // ... (Keep the rest of the methods exactly the same: processSuccessfulPayment, getOrdersByCustomer, etc.)
   
   static async processSuccessfulPayment(reference: string) {
     const order = await prisma.order.findUnique({
@@ -236,6 +235,10 @@ export class OrderService {
   static async updateOrderStatus(orderId: string, status: OrderStatus) {
     const order = await prisma.order.findUnique({ where: { id: orderId } });
     if (!order) throw new Error("Order not found");
+
+    // 🛑 DFA VALIDATION LAYER
+    // Ensure the transition satisfies the Finite Automata rules
+    OrderStateMachine.validateTransition(order.status, status);
 
     let newPaymentStatus = order.paymentStatus;
 

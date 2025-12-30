@@ -314,7 +314,7 @@ export class OrderService {
             ...order,
             // Calculate it here once. 
             // If you change the fee in config, this updates automatically.
-            vendorFoodTotal: order.totalAmount - (order.deliveryFee + PRICING.PLATFORM_FEE)
+            vendorFoodTotal: order.totalAmount - ((order.deliveryFee + PRICING.PLATFORM_FEE) * 0.85 )
         };
     });
   }

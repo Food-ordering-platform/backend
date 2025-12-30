@@ -221,45 +221,62 @@ export class RestaurantService {
   //---------------GET EARNING FOR VENDOR -------------------//
   // Add this method to RestaurantService
   static async getEarnings(restaurantId: string) {
-    // 1. Calculate Available Balance (Completed Orders)
-    const availableAggregate = await prisma.order.aggregate({
-      where: {
-        restaurantId,
-        status: "DELIVERED",
-        paymentStatus: "PAID", // Ensure we actually got the money
-      },
-      _sum: {
-        totalAmount: true,
-        deliveryFee: true,
-      },
+    // 1. Get the Owner (To find their Wallet)
+    const restaurant = await prisma.restaurant.findUnique({
+      where: { id: restaurantId },
+      select: { ownerId: true }
     });
 
-    // 2. Calculate Pending Balance (Active Orders)
-    const pendingAggregate = await prisma.order.aggregate({
+    if (!restaurant) throw new Error("Restaurant not found");
+
+    // ============================================================
+    // A. AVAILABLE BALANCE (From Transaction Table)
+    // ============================================================
+    // Sum of all Credits (Earnings) minus Debits (Withdrawals)
+    const walletStats = await prisma.transaction.groupBy({
+      by: ['type'],
+      where: {
+        userId: restaurant.ownerId,
+        status: { in: ['SUCCESS', 'PENDING'] } // Count PENDING withdrawals so they can't overdraw
+      },
+      _sum: { amount: true }
+    });
+
+    let totalCredit = 0;
+    let totalDebit = 0;
+
+    walletStats.forEach(stat => {
+      if (stat.type === 'CREDIT') totalCredit = stat._sum.amount || 0;
+      if (stat.type === 'DEBIT') totalDebit = stat._sum.amount || 0;
+    });
+
+    const availableBalance = totalCredit - totalDebit;
+
+    // ============================================================
+    // B. PENDING BALANCE (From Orders Table)
+    // ============================================================
+    // Money currently "stuck" in active orders (Paid but not Delivered)
+    const pendingOrders = await prisma.order.findMany({
       where: {
         restaurantId,
-        status: { not: "DELIVERED" }, // Anything NOT delivered yet
         paymentStatus: "PAID",
+        status: { not: "DELIVERED" } // Cooking, Ready, or Out for Delivery
       },
-      _sum: {
-        totalAmount: true,
-        deliveryFee: true,
-      },
+      select: { totalAmount: true, deliveryFee: true }
     });
 
-    // NOTE: If the delivery fee belongs to the Platform, subtract it.
-    // Assuming totalAmount includes delivery fee.
+    let pendingBalance = 0;
+    const PLATFORM_FEE = 350;
 
-    const calculateNet = (agg: any) => {
-      const total = agg._sum.totalAmount || 0;
-      const fees = agg._sum.deliveryFee || 0;
-      // If you (Platform) take the delivery fee, the Vendor gets (Total - Fee).
-      return total - fees;
-    };
+    pendingOrders.forEach(order => {
+      const foodRevenue = order.totalAmount - ( order.deliveryFee + PLATFORM_FEE);
+      const vendorShare = foodRevenue * 0.85; // Estimate the 85%
+      if (vendorShare > 0) pendingBalance += vendorShare;
+    });
 
     return {
-      availableBalance: calculateNet(availableAggregate),
-      pendingBalance: calculateNet(pendingAggregate),
+      availableBalance: availableBalance, // Real Money
+      pendingBalance: pendingBalance,     // Future Money
       currency: "NGN",
     };
   }

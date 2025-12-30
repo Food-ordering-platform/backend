@@ -32,6 +32,8 @@ model User {
   latitude    Float?
   longitude   Float?
 
+  transactions Transaction[]
+
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
   isVerified  Boolean      @default(false)
@@ -152,6 +154,8 @@ model Order {
   reference       String        @unique 
   token           String?       @unique 
 
+  transactions Transaction[]
+
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
 }
@@ -191,4 +195,43 @@ enum Role {
   VENDOR
   ADMIN
   RIDER 
+}
+
+model Transaction {
+  id          String              @id @default(uuid())
+  userId      String              // The User (Vendor, Rider, or Admin) receiving/losing money
+  user        User                @relation(fields: [userId], references: [id])
+  
+  amount      Float               // Positive (+) for Earnings, Negative (-) for Withdrawals
+  
+  type        TransactionType     // CREDIT or DEBIT
+  category    TransactionCategory // ORDER_EARNING, WITHDRAWAL, REFUND, PLATFORM_FEE
+  status      TransactionStatus   @default(PENDING)
+  
+  orderId     String?             // Link to the Order (if applicable)
+  order       Order?              @relation(fields: [orderId], references: [id])
+  
+  description String?             // e.g. "Earnings from Order #1234"
+  
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+}
+
+enum TransactionType {
+  CREDIT  // Money coming in
+  DEBIT   // Money going out
+}
+
+enum TransactionCategory {
+  ORDER_EARNING
+  DELIVERY_FEE
+  PLATFORM_FEE
+  WITHDRAWAL
+  REFUND
+}
+
+enum TransactionStatus {
+  PENDING
+  SUCCESS
+  FAILED
 }

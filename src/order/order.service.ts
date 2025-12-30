@@ -6,6 +6,7 @@ import { sendPushNotification } from "../utils/notification";
 import { getSocketIO } from "../utils/socket";
 import { calculateDistance, calculateDeliveryFee } from "../utils/haversine";
 import { OrderStateMachine } from "../utils/order-state-machine";
+import { PRICING } from "../config/pricing";
 
 const prisma = new PrismaClient();
 
@@ -298,7 +299,7 @@ export class OrderService {
   }
 
   static async getVendorOrders(restaurantId: string) {
-    return await prisma.order.findMany({
+    const orders = await prisma.order.findMany({
       where: { restaurantId, paymentStatus: { in: ["PAID", "REFUNDED"] } },
       include: {
         items: true,
@@ -306,7 +307,18 @@ export class OrderService {
       },
       orderBy: { createdAt: "desc" },
     });
+
+    // ✅ Post-process the data to add 'vendorFoodTotal'
+    return orders.map((order) => {
+        return {
+            ...order,
+            // Calculate it here once. 
+            // If you change the fee in config, this updates automatically.
+            vendorFoodTotal: order.totalAmount - (order.deliveryFee + PRICING.PLATFORM_FEE)
+        };
+    });
   }
+  
 
    static async distributeVendorEarnings(orderId: string) {
     const order = await prisma.order.findUnique({
@@ -319,7 +331,7 @@ export class OrderService {
     }
 
     // LOGIC: Total - Delivery - Platform Fee = Food Money
-    const foodRevenue = order.totalAmount - order.deliveryFee - 350;
+    const foodRevenue = order.totalAmount - (order.deliveryFee - PRICING.PLATFORM_FEE);
     const vendorShare = foodRevenue * 0.85; // 85% for Vendor
 
     // Create the Transaction Record

@@ -1,5 +1,6 @@
 import { PrismaClient } from "../../generated/prisma";
 import { uploadToCloudinary } from "../cloudinary/upload";
+import { PRICING } from "../config/pricing";
 
 const prisma = new PrismaClient();
 
@@ -260,16 +261,15 @@ export class RestaurantService {
       where: {
         restaurantId,
         paymentStatus: "PAID",
-        status: { not: "DELIVERED" } // Cooking, Ready, or Out for Delivery
+        status: { in: ["PREPARING", "OUT_FOR_DELIVERY"] } // Cooking, Ready, or Out for Delivery
       },
       select: { totalAmount: true, deliveryFee: true }
     });
 
     let pendingBalance = 0;
-    const PLATFORM_FEE = 350;
 
     pendingOrders.forEach(order => {
-      const foodRevenue = order.totalAmount - ( order.deliveryFee + PLATFORM_FEE);
+      const foodRevenue = order.totalAmount - ( order.deliveryFee + PRICING.PLATFORM_FEE);
       const vendorShare = foodRevenue * 0.85; // Estimate the 85%
       if (vendorShare > 0) pendingBalance += vendorShare;
     });

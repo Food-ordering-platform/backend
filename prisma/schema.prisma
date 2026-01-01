@@ -212,6 +212,8 @@ model Transaction {
   order       Order?              @relation(fields: [orderId], references: [id])
   
   description String?             // e.g. "Earnings from Order #1234"
+
+  reference   String?             @unique
   
   createdAt   DateTime            @default(now())
   updatedAt   DateTime            @updatedAt

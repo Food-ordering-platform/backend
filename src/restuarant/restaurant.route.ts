@@ -36,4 +36,7 @@ router.get("/:id/earnings", authMiddleware, RestaurantController.getEarnings);
 //8. View Recent Transactions
 router.get("/:id/transactions", authMiddleware, RestaurantController.getTransactions)
 
+//9. Withdraw Money
+router.post("/:id/withdraw", authMiddleware, RestaurantController.requestPayout);
+
 export default router;

@@ -282,6 +282,53 @@ export class RestaurantService {
     };
   }
 
+  //-------------------------REQUEST VENDOR PAYOUT ------------------------------//
+  // 2. REQUEST PAYOUT (MANUAL)
+  static async requestPayout(
+    restaurantId: string, 
+    amount: number, 
+    bankDetails: any // We accept their bank info to know where to send money
+  ) {
+    // A. Validation
+    if (amount < 1000) throw new Error("Minimum withdrawal is ₦1,000");
+
+    // B. Check Balance (Re-use the safe logic above)
+    const { availableBalance } = await RestaurantService.getEarnings(restaurantId);
+
+    if (amount > availableBalance) {
+      throw new Error(`Insufficient funds. You only have ₦${availableBalance.toLocaleString()}`);
+    }
+
+    // C. Get Owner ID
+    const restaurant = await prisma.restaurant.findUnique({
+      where: { id: restaurantId },
+      select: { ownerId: true }
+    });
+
+    if(!restaurant){
+      throw new Error("Restaurant Not Found")
+    }
+
+    // D. Create the "PENDING" Debit
+    // This immediately locks the funds because getEarnings() subtracts PENDING debits.
+    const transaction = await prisma.transaction.create({
+      data: {
+        userId: restaurant.ownerId!,
+        amount: amount,
+        type: "DEBIT",
+        category: "WITHDRAWAL",
+        status: "PENDING", // <--- Waits for you to approve manually
+        description: `Withdrawal to ${bankDetails?.bankName || 'Bank'}`,
+        reference: `PAYOUT-${Date.now()}` // Unique Ref
+      }
+    });
+
+    return transaction;
+  }
+  
+//--------------------GET VENDOR TRANSACTION -----------------------------//
+
+
   static async getTransactions(restaurantId: string) {
     //1. Find owner of the restaurant
     const restaurant = await prisma.restaurant.findUnique({
@@ -302,5 +349,4 @@ export class RestaurantService {
     })
     return transaction
   }
-
 }

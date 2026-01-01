@@ -271,7 +271,29 @@ export class RestaurantController {
       return res.status(200).json({success:true, data:transactions})
     }
     catch(err: any){
-      return res.status(400).json({success:false, message: err.message })
+      return res.status(400).json({success:false, message: err.message  })
+    }
+  }
+
+  //--------------------------VENDOR REQUEST PAYOUT ------------------------------//
+  static async requestPayout(req:Request, res:Response){
+    try{
+      const { id } = req.params
+      const {amount, bankDetails} = req.body
+
+      if(!amount){
+        return res.status(400).json({success:true, message:"Amount is required"})
+      }
+      if(!bankDetails){
+        return res.status(400).json({success:false, message:"Invalid Bank Details"})
+      }
+
+      const result = await RestaurantService.requestPayout(id, Number(amount), bankDetails)
+
+      return res.status(200).json({success:true, data:result})
+    }
+    catch(err: any){
+      return res.status(400).json({success:false, message:err.message})
     }
   }
 }

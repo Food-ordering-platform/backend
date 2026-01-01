@@ -1,3 +1,4 @@
+import tr from "zod/v4/locales/tr.cjs";
 import { PrismaClient } from "../../generated/prisma";
 import { uploadToCloudinary } from "../cloudinary/upload";
 import { PRICING } from "../config/pricing";
@@ -299,5 +300,7 @@ export class RestaurantService {
       orderBy:{createdAt:'desc'},
       take:50 //Limit to the last 50 for performance
     })
+    return transaction
   }
+
 }

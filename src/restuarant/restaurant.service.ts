@@ -2,6 +2,7 @@ import tr from "zod/v4/locales/tr.cjs";
 import { PrismaClient } from "../../generated/prisma";
 import { uploadToCloudinary } from "../cloudinary/upload";
 import { PRICING } from "../config/pricing";
+import { sendPayoutRequestEmail } from "../utils/mailer";
 
 const prisma = new PrismaClient();
 
@@ -302,7 +303,7 @@ export class RestaurantService {
     // C. Get Owner ID
     const restaurant = await prisma.restaurant.findUnique({
       where: { id: restaurantId },
-      select: { ownerId: true }
+      select: { owner: true, ownerId:true }
     });
 
     if(!restaurant){
@@ -322,6 +323,17 @@ export class RestaurantService {
         reference: `PAYOUT-${Date.now()}` // Unique Ref
       }
     });
+
+    // E. 📧 Send Notification to Vendor
+    // We don't await this so it doesn't slow down the UI
+    if (restaurant.owner?.email) {
+      sendPayoutRequestEmail(
+        restaurant.owner.email, 
+        restaurant.owner.name || "Partner", 
+        amount, 
+        bankDetails?.bankName || "Bank"
+      );
+    }
 
     return transaction;
   }

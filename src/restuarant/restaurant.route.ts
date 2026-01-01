@@ -33,4 +33,7 @@ router.patch("/menu/:id/toggle", authMiddleware, RestaurantController.toggleMenu
 // 7. View Earnings (Strictly Private)
 router.get("/:id/earnings", authMiddleware, RestaurantController.getEarnings);
 
+//8. View Recent Transactions
+router.get("/:id/transactions", authMiddleware, RestaurantController.getTransactions)
+
 export default router;

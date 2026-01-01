@@ -280,4 +280,24 @@ export class RestaurantService {
       currency: "NGN",
     };
   }
+
+  static async getTransactions(restaurantId: string) {
+    //1. Find owner of the restaurant
+    const restaurant = await prisma.restaurant.findUnique({
+      where:{id:restaurantId},
+      select:{ownerId:true}
+    })
+
+    if(!restaurant){
+      throw new Error("Restaurant not found")
+    }
+
+    //2.Fetch Transaction for this owner
+    //We order by createdAt desc so the the next money shows up
+    const transaction = await prisma.transaction.findMany({
+      where:{userId:restaurant.ownerId},
+      orderBy:{createdAt:'desc'},
+      take:50 //Limit to the last 50 for performance
+    })
+  }
 }

@@ -261,4 +261,17 @@ export class RestaurantController {
       res.status(500).json({success:false, message:err.message || "Failed to fetch earnings"})
     }
   }
+
+  //----------------GET VENDOR TRANSACTIONS----------------------//
+  static async getTransactions(req:Request, res:Response){
+    try{
+      const {id} = req.params //This is restaurantID
+      const transactions = await RestaurantService.getTransactions(id)
+
+      return res.status(200).json({success:true, data:transactions})
+    }
+    catch(err: any){
+      return res.status(400).json({success:false, message: err.message })
+    }
+  }
 }

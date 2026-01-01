@@ -60,7 +60,7 @@ const generateEmailHTML = (
   `;
 };
 
-// --- 1. SEND OTP EMAIL ---
+// --- 1. SEND OTP EMAIL --- (ALL USERS)
 export async function sendOtPEmail(email: string, otp: string) {
   const url = getEmailServiceUrl();
   if (!url) return;
@@ -83,7 +83,7 @@ export async function sendOtPEmail(email: string, otp: string) {
   }
 }
 
-// --- 2. SEND LOGIN NOTIFICATION ---
+// --- 2. SEND LOGIN NOTIFICATION --- (ALL USERS)
 export async function sendLoginAlertEmail(email: string, name: string) {
   const url = getEmailServiceUrl();
   if (!url) return;
@@ -106,7 +106,7 @@ export async function sendLoginAlertEmail(email: string, name: string) {
   }
 }
 
-// --- 3. SEND ORDER STATUS EMAIL ---
+// --- 3. SEND ORDER STATUS EMAIL --- (CUSTOMER)
 export async function sendOrderStatusEmail(email: string, name: string, orderId: string, status: string) {
   const url = getEmailServiceUrl();
   if (!url) return;
@@ -152,5 +152,40 @@ export async function sendOrderStatusEmail(email: string, name: string, orderId:
     console.log(`✅ Order Email (${status}) sent to ${email}`);
   } catch (err: any) {
     console.error(`❌ Order Email Failed (${status}):`, err.message);
+  }
+}
+
+// --- 4. SEND PAYOUT REQUEST EMAIL (VENDOR) ---
+export async function sendPayoutRequestEmail(
+  email: string, 
+  name: string, 
+  amount: number, 
+  bankName: string
+) {
+  const url = getEmailServiceUrl();
+  if (!url) return;
+
+  try {
+    const title = "Withdrawal Request Received 💸";
+    const body = `
+      <p>Hi <b>${name}</b>,</p>
+      <p>We have received your request to withdraw funds.</p>
+      
+      <div style="background: #FFFBEB; border: 1px solid #FCD34D; padding: 20px; border-radius: 8px; margin: 20px 0; color: #92400E;">
+        <div style="font-size: 14px; margin-bottom: 5px;">Amount Requested:</div>
+        <div style="font-size: 24px; font-weight: bold; margin-bottom: 10px;">₦${amount.toLocaleString()}</div>
+        <div style="font-size: 14px;">Destination: <b>${bankName}</b></div>
+      </div>
+
+      <p><b>What happens next?</b><br/>
+      Our team will review your request. Funds are typically processed within 24 hours.</p>
+    `;
+
+    const html = generateEmailHTML(title, body, BRAND_COLORS.warning, "🏦"); // Using Warning/Amber color for "Pending" feel
+
+    await axios.post(url, { to: email, subject: "Withdrawal Request Received", html });
+    console.log(`✅ Payout Email sent to ${email}`);
+  } catch (err: any) {
+    console.error("❌ Payout Email Failed:", err.message);
   }
 }

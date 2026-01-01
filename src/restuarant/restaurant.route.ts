@@ -5,37 +5,32 @@ import { authMiddleware } from "../auth/auth.middleware";
 
 const router = Router();
 
-// Restaurant
+// === PUBLIC ROUTES (Anyone can see menu/restaurants) ===
 router.get("/", RestaurantController.getAllRestaurants);
 router.get("/:id", RestaurantController.getRestaurantById);
-
-// Menu Management
 router.get("/:id/menu", RestaurantController.getMenuItems);
-router.post(
-  "/:id/menu", 
-  upload.single("image"), 
-  RestaurantController.addMenuItem
-);
 
-// ✅ KEEP THIS ONE (It has the upload middleware)
-router.post(
-  "/:id", 
-  upload.single("image"), 
-  RestaurantController.updateRestaurant
-);
+// === PROTECTED ROUTES (Only Owners/Admin) ===
 
-// Create Restaurant
-router.post(
-  "/", 
-  upload.single("image"), 
-  RestaurantController.createRestaurant
-);
+// 1. Create Restaurant
+router.post("/", authMiddleware, upload.single("image"), RestaurantController.createRestaurant);
 
-router.put("/menu/:id", RestaurantController.updateMenuItem);
-router.delete("/menu/:id", RestaurantController.deleteMenuItem);
-router.patch("/menu/:id/toggle", RestaurantController.toggleMenuItemAvailability);
+// 2. Update Restaurant Details
+router.post("/:id", authMiddleware, upload.single("image"), RestaurantController.updateRestaurant);
 
-//Vendor Earnings
-router.get("/:id/earnings", authMiddleware, RestaurantController.getEarnings)
+// 3. Add Menu Item
+router.post("/:id/menu", authMiddleware, upload.single("image"), RestaurantController.addMenuItem);
+
+// 4. Update Menu Item
+router.put("/menu/:id", authMiddleware, RestaurantController.updateMenuItem);
+
+// 5. Delete Menu Item
+router.delete("/menu/:id", authMiddleware, RestaurantController.deleteMenuItem);
+
+// 6. Toggle Availability (Stock)
+router.patch("/menu/:id/toggle", authMiddleware, RestaurantController.toggleMenuItemAvailability);
+
+// 7. View Earnings (Strictly Private)
+router.get("/:id/earnings", authMiddleware, RestaurantController.getEarnings);
 
 export default router;

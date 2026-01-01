@@ -1,24 +1,28 @@
 import { Router } from "express";
 import { OrderController } from "./order.controller";
+import { authMiddleware } from "../auth/auth.middleware"; // 👈 Import Middleware
 
 const router = Router();
 
-// Create a new order
-router.post("/", OrderController.createOrder);
+// Apply middleware globally to all order routes (Optional, or add per route)
+// router.use(authMiddleware); 
 
-router.post("/quote", OrderController.getQuote);
+// 1. Create Order (Must be a logged-in User)
+router.post("/", authMiddleware, OrderController.createOrder);
 
-// Get all orders for a customer
-router.get("/customer/:customerId", OrderController.getAllOrders);
+// 2. Get Quote (Can be Public if you allow guest checkout, otherwise Private)
+router.post("/quote", authMiddleware, OrderController.getQuote); 
 
-// Get a single order by reference
-router.get("/single/:reference", OrderController.getSingleOrder);
+// 3. Customer History (Strictly Private)
+router.get("/customer/:customerId", authMiddleware, OrderController.getAllOrders);
 
-//Get orders for a restaurant
-router.get("/restaurant/:restaurantId", OrderController.getVendorOrders)
+// 4. Track Order (Strictly Private)
+router.get("/single/:reference", authMiddleware, OrderController.getSingleOrder);
 
-//Update Order status
-router.patch("/:id/status", OrderController.updateOrderStatus)
+// 5. Vendor Dashboard (Strictly Private)
+router.get("/restaurant/:restaurantId", authMiddleware, OrderController.getVendorOrders);
 
+// 6. Update Status (CRITICAL SECURITY - Only Riders/Vendors)
+router.patch("/:id/status", authMiddleware, OrderController.updateOrderStatus);
 
 export default router;

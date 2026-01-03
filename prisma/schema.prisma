@@ -32,6 +32,9 @@ model User {
   latitude    Float?
   longitude   Float?
 
+  // [NEW] The orders this user (Rider) has delivered
+  deliveries   Order[]  @relation("RiderOrders")
+
   transactions Transaction[]
 
   createdAt   DateTime     @default(now())
@@ -154,6 +157,17 @@ model Order {
   reference       String        @unique 
   token           String?       @unique 
 
+  // [NEW] Who is delivering this?
+  riderId      String?
+  rider        User?    @relation("RiderOrders", fields: [riderId], references: [id])
+
+  // === NEW FIELDS FOR LOGISTICS ===
+  trackingId        String?  @unique // The "Rider Link" ID (e.g. "task-abc-123")
+  deliveryCode      String?  // The OTP the customer gives the rider (e.g. "4590")
+  
+  logisticsPartner   LogisticsPartner? @relation(fields: [logisticsPartnerId], references: [id])
+  logisticsPartnerId String?
+
   transactions Transaction[]
 
   createdAt       DateTime      @default(now())
@@ -195,6 +209,7 @@ enum Role {
   VENDOR
   ADMIN
   RIDER 
+  DISPATCHER // [NEW] This is for your logistics partner's manager
 }
 
 model Transaction {
@@ -236,4 +251,25 @@ enum TransactionStatus {
   PENDING
   SUCCESS
   FAILED
+}
+
+model LogisticsPartner {
+  id            String   @id @default(uuid())
+  name          String
+  secretKey     String   @unique
+  walletBalance Float    @default(0.0) // This holds the current UNPAID amount
+  
+  payouts       LogisticsPayout[]
+  orders        Order[]
+}
+
+model LogisticsPayout {
+  id        String   @id @default(uuid())
+  amount    Float
+  status    String   @default("PENDING") // Options: "PENDING", "PAID", "REJECTED"
+  createdAt DateTime @default(now())
+  paidAt    DateTime? 
+  
+  partnerId String
+  partner   LogisticsPartner @relation(fields: [partnerId], references: [id])
 }

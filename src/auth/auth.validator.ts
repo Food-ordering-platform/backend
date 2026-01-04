@@ -6,6 +6,10 @@ export const registerSchema = z.object({
     password:z.string().min(6, {message: "Password must be at least 6 characters"}),
     phone:z.string(),
     role: z.enum(["CUSTOMER", "VENDOR", "RIDER"]).default("CUSTOMER"),
+
+    terms: z.boolean().refine(val => val === true, {
+        message: "You must accept the Terms and Conditions"
+    })
 })
 
 export const loginSchema = z.object({

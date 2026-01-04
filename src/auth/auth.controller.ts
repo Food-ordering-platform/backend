@@ -11,7 +11,7 @@ export class AuthController {
     try {
       const data = registerSchema.parse(req.body);
       const { user, token } = await AuthService.registerUser(
-        data.name, data.email, data.password, data.phone, data.role
+        data.name, data.email, data.password, data.phone, data.role, new Date()
       );
 
       return res.status(201).json({

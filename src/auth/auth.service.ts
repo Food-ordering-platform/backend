@@ -23,22 +23,30 @@ export class AuthService {
   ) {
     const existingUser = await prisma.user.findUnique({ where: { email } });
 
-    if (existingUser) {
+ if (existingUser) {
       if (!existingUser.isVerified) {
-        const code = await this.generateOtp(existingUser.id);
-        await sendOtPEmail(existingUser.email, code);
+        const updatedUser = await prisma.user.update({
+          where: { id: existingUser.id },
+          data: {
+            termsAcceptedAt: termsAcceptedAt, 
+            name: name,
+            phone: phone, 
+          }
+        });
+        const code = await this.generateOtp(updatedUser.id);
+        await sendOtPEmail(updatedUser.email, code);
 
         const token = jwt.sign(
-          { userId: existingUser.id, role: existingUser.role },
+          { userId: updatedUser.id, role: updatedUser.role },
           process.env.JWT_SECRET as string,
           { expiresIn: "30m" } 
         );
 
-        return { user: existingUser, token };
+        // Return the UPDATED user, not the old 'existingUser'
+        return { user: updatedUser, token };
       }
       throw new Error("This email is already registered. Please login.");
     }
-
     const hashedPassword = await bcrypt.hash(password, 10);
 
     const user = await prisma.user.create({

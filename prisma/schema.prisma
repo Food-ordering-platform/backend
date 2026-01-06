@@ -32,6 +32,9 @@ model User {
   latitude    Float?
   longitude   Float?
 
+
+// [NEW] Link user to a Logistics Company
+  logisticsPartner LogisticsPartner? @relation("LogisticsOwner")
   // [NEW] The orders this user (Rider) has delivered
   deliveries   Order[]  @relation("RiderOrders")
 
@@ -258,20 +261,21 @@ enum TransactionStatus {
 model LogisticsPartner {
   id            String   @id @default(uuid())
   name          String
-  secretKey     String   @unique
-  walletBalance Float    @default(0.0) // This holds the current UNPAID amount
   
-  payouts       LogisticsPayout[]
-  orders        Order[]
-}
+  // [NEW] Contact Details for the Business
+  email         String   @unique 
+  phone         String
+  address       String
 
-model LogisticsPayout {
-  id        String   @id @default(uuid())
-  amount    Float
-  status    String   @default("PENDING") // Options: "PENDING", "PAID", "REJECTED"
-  createdAt DateTime @default(now())
-  paidAt    DateTime? 
-  
-  partnerId String
-  partner   LogisticsPartner @relation(fields: [partnerId], references: [id])
+  // [NEW] Linked to a User Account (The Manager/Dispatcher)
+  owner         User     @relation("LogisticsOwner", fields: [ownerId], references: [id])
+  ownerId       String   @unique
+
+  // [REMOVED] secretKey String @unique
+
+  walletBalance Float    @default(0.0)
+  orders        Order[]
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 }

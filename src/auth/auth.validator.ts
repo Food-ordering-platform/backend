@@ -7,6 +7,8 @@ export const registerSchema = z.object({
     phone:z.string(),
     role: z.enum(["CUSTOMER", "VENDOR", "RIDER", "DISPATCHER"]).default("CUSTOMER"),
 
+    address: z.string().optional(),
+
     terms: z.boolean().refine(val => val === true, {
         message: "You must accept the Terms and Conditions"
     })

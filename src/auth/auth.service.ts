@@ -18,8 +18,9 @@ export class AuthService {
     email: string,
     password: string,
     phone: string, 
-    role: "CUSTOMER" | "VENDOR" | "DISPATCHER"  = "CUSTOMER",
-    termsAcceptedAt: Date
+    role: "CUSTOMER" | "VENDOR" | "DISPATCHER" | "RIDER"  = "CUSTOMER",
+    termsAcceptedAt: Date,
+    address?:string
   ) {
     const existingUser = await prisma.user.findUnique({ where: { email } });
 
@@ -31,6 +32,7 @@ export class AuthService {
             termsAcceptedAt: termsAcceptedAt, 
             name: name,
             phone: phone, 
+            address:address
           }
         });
         const code = await this.generateOtp(updatedUser.id);
@@ -57,7 +59,8 @@ export class AuthService {
         phone,
         role,
         isVerified: false,
-        termsAcceptedAt: termsAcceptedAt
+        termsAcceptedAt: termsAcceptedAt,
+        address
       },
     });
 

@@ -1,6 +1,9 @@
+import { randomBytes } from "crypto";
 import { PrismaClient } from "../../generated/prisma";
 import { getSocketIO } from "../utils/socket"; 
 const prisma = new PrismaClient();
+
+const generateTrackingId = () => "TRK-" + randomBytes(4).toString("hex").toUpperCase();
 
 export class DispatchService {
   // 1. GET DASHBOARD (Greedy Version)
@@ -74,9 +77,11 @@ export class DispatchService {
         throw new Error("Order already taken");
     }
 
+    const trackingId = order.trackingId || generateTrackingId();
+
     return await prisma.order.update({
         where: { id: orderId },
-        data: { logisticsPartnerId: partner.id }
+        data: { logisticsPartnerId: partner.id, trackingId }
     });
   }
 

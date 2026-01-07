@@ -28,8 +28,8 @@ export const calculateDistance = (
 
 export const calculateDeliveryFee = (distanceKm: number) : number => {
   const BASE_DISTANCE = 2; // First 2km
-  const BASE_FEE = 350;
-  const PER_KM_RATE = 150;
+  const BASE_FEE = 500;
+  const PER_KM_RATE = 100;
 
   if (distanceKm <= BASE_DISTANCE) {
     return BASE_FEE;

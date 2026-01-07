@@ -8,7 +8,8 @@ const BRAND_COLORS = {
   success: "#059669",     // Emerald green
   warning: "#F59E0B",     // Amber
   danger: "#DC2626",      // Red
-  info: "#3B82F6"         // Blue
+  info: "#3B82F6",        // Blue
+  indigo: "#6366F1"       // Indigo (For Delivery Code)
 };
 
 // --- HELPER: CHECK ENV ---
@@ -60,7 +61,8 @@ const generateEmailHTML = (
   `;
 };
 
-// --- 1. SEND OTP EMAIL --- (ALL USERS)
+// ... (Keep existing sendOtPEmail, sendLoginAlertEmail, sendOrderStatusEmail, sendPayoutRequestEmail) ...
+
 export async function sendOtPEmail(email: string, otp: string) {
   const url = getEmailServiceUrl();
   if (!url) return;
@@ -83,7 +85,6 @@ export async function sendOtPEmail(email: string, otp: string) {
   }
 }
 
-// --- 2. SEND LOGIN NOTIFICATION --- (ALL USERS)
 export async function sendLoginAlertEmail(email: string, name: string) {
   const url = getEmailServiceUrl();
   if (!url) return;
@@ -106,7 +107,6 @@ export async function sendLoginAlertEmail(email: string, name: string) {
   }
 }
 
-// --- 3. SEND ORDER STATUS EMAIL --- (CUSTOMER)
 export async function sendOrderStatusEmail(email: string, name: string, orderId: string, status: string) {
   const url = getEmailServiceUrl();
   if (!url) return;
@@ -155,13 +155,7 @@ export async function sendOrderStatusEmail(email: string, name: string, orderId:
   }
 }
 
-// --- 4. SEND PAYOUT REQUEST EMAIL (VENDOR) ---
-export async function sendPayoutRequestEmail(
-  email: string, 
-  name: string, 
-  amount: number, 
-  bankName: string
-) {
+export async function sendPayoutRequestEmail(email: string, name: string, amount: number, bankName: string) {
   const url = getEmailServiceUrl();
   if (!url) return;
 
@@ -181,11 +175,39 @@ export async function sendPayoutRequestEmail(
       Our team will review your request. Funds are typically processed within 24 hours.</p>
     `;
 
-    const html = generateEmailHTML(title, body, BRAND_COLORS.warning, "🏦"); // Using Warning/Amber color for "Pending" feel
+    const html = generateEmailHTML(title, body, BRAND_COLORS.warning, "🏦"); 
 
     await axios.post(url, { to: email, subject: "Withdrawal Request Received", html });
     console.log(`✅ Payout Email sent to ${email}`);
   } catch (err: any) {
     console.error("❌ Payout Email Failed:", err.message);
+  }
+}
+
+// ✅ NEW: SEND DELIVERY CODE (CONSISTENT STYLE)
+export async function sendDeliveryCode(email: string, code: string, orderId: string) {
+  const url = getEmailServiceUrl();
+  if (!url) return;
+
+  try {
+    const title = "Your Secret Delivery Code 🤫";
+    const body = `
+      <p>Your order <b>#${orderId.slice(-4)}</b> is confirmed!</p>
+      <p>When the rider arrives, they will ask for this code. Do NOT share it until you have your food.</p>
+      
+      <div style="background: #EEF2FF; border: 1px solid #C7D2FE; padding: 25px; border-radius: 12px; margin: 25px 0; color: #3730A3;">
+        <div style="font-size: 13px; text-transform: uppercase; font-weight: bold; letter-spacing: 1px; margin-bottom: 8px;">Delivery Code</div>
+        <div style="font-size: 42px; font-weight: 800; letter-spacing: 8px;">${code}</div>
+      </div>
+
+      <p style="font-size: 13px; color: #6B7280;">Only the correct rider can complete the order with this code.</p>
+    `;
+
+    const html = generateEmailHTML(title, body, BRAND_COLORS.indigo, "🔑");
+
+    await axios.post(url, { to: email, subject: `🔑 Delivery Code: ${code}`, html });
+    console.log(`✅ Delivery Code sent to ${email}`);
+  } catch (err: any) {
+    console.error("❌ Delivery Code Email Failed:", err.message);
   }
 }

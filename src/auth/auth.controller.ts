@@ -41,15 +41,16 @@ export class AuthController {
     }
   }
 
-  // ------------------ GOOGLE LOGIN (PURE JWT) ------------------
+  // ------------------ GOOGLE LOGIN (STRICT) ------------------
   static async googleLogin(req: Request, res: Response) {
     try {
-      const { token } = req.body; 
+      // Extract termsAccepted flag (defaults to false if missing)
+      const { token, termsAccepted } = req.body; 
+      
       if (!token) throw new Error("Google token is required");
 
-      const result = await AuthService.loginWithGoogle(token);
+      const result = await AuthService.loginWithGoogle(token, !!termsAccepted);
 
-      // UNIFIED RESPONSE: Always return the token. No sessions.
       return res.status(200).json({
         message: "Google login successful",
         token: result.token, 
@@ -57,7 +58,9 @@ export class AuthController {
       });
 
     } catch (err: any) {
-      return res.status(400).json({ error: err.message });
+      // 404 for "User not found" prompts the frontend to redirect to signup
+      const status = err.message.includes("Sign Up") ? 404 : 400;
+      return res.status(status).json({ error: err.message });
     }
   }
 
@@ -77,6 +80,7 @@ export class AuthController {
       res.status(401).json({ error: "Unauthorized: " + err.message });
     }
   }
+
   static async updateProfile(req: Request, res: Response) {
     try {
       if (!req.user) throw new Error("Unauthorized");
@@ -101,8 +105,6 @@ export class AuthController {
     }
   }
 
-  
-
   // ------------------ VERIFY OTP ------------------
   static async verifyOtp(req: Request, res: Response) {
     try {
@@ -121,12 +123,10 @@ export class AuthController {
 
   // ------------------ LOGOUT ------------------
   static async logout(req: Request, res: Response) {
-    // Pure JWT Logout is handled by the Client (Frontend) deleting the token.
-    // We just return success.
     return res.status(200).json({ message: "Logged out successfully" });
   }
 
-  // ... (Password reset & Push token methods remain unchanged) ...
+  // ... (Password reset & Push token methods)
   static async forgotPassword(req: Request, res: Response) {
       try {
         const { email } = req.body;

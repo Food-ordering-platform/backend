@@ -39,7 +39,6 @@ export class AuthService {
           }
         });
         
-        // Regenerate OTP
         const code = await this.generateOtp(updatedUser.id);
         await sendOtPEmail(updatedUser.email, code);
 
@@ -56,9 +55,7 @@ export class AuthService {
 
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    // 2. ATOMIC TRANSACTION: Create User + (Optional) LogisticsPartner
     const result = await prisma.$transaction(async (tx) => {
-        // A. Create the base User
         const user = await tx.user.create({
           data: {
             name,
@@ -72,29 +69,20 @@ export class AuthService {
           },
         });
 
-        // B. If DISPATCHER, automatically create the LogisticsPartner profile
         if (role === "DISPATCHER") {
-            // Validate required fields for Logistics Partner
-            if (!address) {
-                // You can either throw an error or use a placeholder
-                // throw new Error("Address is required for Logistics Companies."); 
-            }
-
             await tx.logisticsPartner.create({
                 data: {
-                    name: `${name}'s Logistics`, // Default business name
-                    email: email, // Use owner's email
-                    phone: phone, // Use owner's phone
+                    name: `${name}'s Logistics`,
+                    email: email, 
+                    phone: phone, 
                     address: address || "Update Your Office Address",
                     ownerId: user.id
                 }
             });
         }
-
         return user;
     });
 
-    // 3. Generate OTP & Token (Outside transaction to keep it fast)
     const code = await this.generateOtp(result.id);
 
     const token = jwt.sign(
@@ -103,7 +91,6 @@ export class AuthService {
       { expiresIn: "30m" } 
     );
 
-    // 4. Send Email (Non-blocking)
     sendOtPEmail(result.email, code).catch(err => console.error("Failed to send OTP email:", err));
 
     return { user: result, token };
@@ -118,7 +105,6 @@ export class AuthService {
     const isValid = await bcrypt.compare(password, user.password);
     if (!isValid) throw new Error("Incorrect password. Please try again.");
 
-    // Handle Unverified Users
     if (!user.isVerified) {
       const code = await this.generateOtp(user.id);
       await sendOtPEmail(user.email, code);
@@ -146,7 +132,8 @@ export class AuthService {
     return { token, user };
   }
 
-  static async loginWithGoogle(token: string) {
+  // ------------------ GOOGLE LOGIN ------------------
+  static async loginWithGoogle(token: string, termsAccepted: boolean) {
     const ticket = await googleClient.verifyIdToken({
       idToken: token,
       audience: process.env.GOOGLE_CLIENT_ID,
@@ -163,7 +150,13 @@ export class AuthService {
       where: { email },
     });
 
+    // 🛑 BLOCKER: If user doesn't exist AND they didn't accept terms (via Signup page)
+    if (!user && !termsAccepted) {
+        throw new Error("Account not found. Please use the Sign Up page to create an account.");
+    }
+
     if (!user) {
+      // ✅ CREATE NEW USER (With Terms Date)
       user = await prisma.user.create({
         data: {
           email,
@@ -171,10 +164,12 @@ export class AuthService {
           googleId,
           avatar: picture,
           isVerified: true, 
-          role: "CUSTOMER", 
+          role: "CUSTOMER",
+          termsAcceptedAt: new Date(), // <--- SAVING THE DATE
         },
       });
     } else {
+      // UPDATE EXISTING USER
       if (!user.googleId) {
         user = await prisma.user.update({
           where: { id: user.id },
@@ -205,10 +200,10 @@ export class AuthService {
         email:true,
         role:true,
         isVerified:true,
-        latitude: true,  // 👈 Added
+        latitude: true,  
         longitude: true,
+        address: true, // Make sure address is returned
         phone:true,
-        // [FIX] Included restaurant relation here so frontend receives the ID
         restaurant: true
       }
     })
@@ -260,7 +255,6 @@ export class AuthService {
     return code;
   }
 
-  // ------------------ VERIFY OTP (SIGNUP) ------------------
   static async verifyOtp(token: string, code: string) {
     try {
       const payload = jwt.verify(
@@ -377,9 +371,6 @@ export class AuthService {
     }
   }
 
-  
-  //------------------PUSH NOTIFICATION FOR VENDORS ---------------------------//
-  // ... inside AuthService class
   static async updatePushToken(userId: string, token: string) {
     return prisma.user.update({
       where: { id: userId },

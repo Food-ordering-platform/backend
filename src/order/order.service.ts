@@ -349,7 +349,7 @@ export class OrderService {
   }
 
   static async updateOrderStatus(orderId: string, status: OrderStatus) {
-    const order = await prisma.order.findUnique({ where: { id: orderId } });
+    const order = await prisma.order.findUnique({ where: { id: orderId }, include:{restaurant:true} });
     if (!order) throw new Error("Order not found");
 
     OrderStateMachine.validateTransition(order.status, status);
@@ -371,6 +371,32 @@ export class OrderService {
       data: { status, paymentStatus: newPaymentStatus },
       include: { customer: true },
     });
+
+    // ============================================================
+    // ✅ NEW AUTOMATIC DISPATCH LOGIC
+    // ============================================================
+    try {
+        const io = getSocketIO();
+        
+        // As soon as Vendor says "CONFIRMED" (Accepts), we notify Dispatchers
+        if (status === "PREPARING") {
+            
+            // Broadcast to the global "dispatchers" room
+            io.to("dispatchers").emit("new_dispatcher_request", {
+                orderId: order.id,
+                status: status,
+                restaurantName: order.restaurant.name,
+                restaurantAddress: order.restaurant.address || "Warri", 
+                customerAddress: order.deliveryAddress,
+                totalAmount: order.totalAmount,
+                time: new Date().toISOString()
+            });
+            
+            console.log(`🚀 Auto-Dispatched Order #${order.reference} to Riders`);
+        }
+    } catch (error) {
+        console.log("Socket emit failed", error);
+    }
 
     if (status === "DELIVERED" && order.paymentStatus === "PAID") {
         try {

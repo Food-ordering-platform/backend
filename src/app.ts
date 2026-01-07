@@ -9,6 +9,7 @@ import authRouter from "./auth/auth.route";
 import restaurantRouter from "./restuarant/restaurant.route";
 import orderRouter from "./order/order.routes";
 import paymentRouter from "./payment/payment.route";
+import dispatchRouter from "./dispatch/dispatch.route"
 
 const app = express();
 
@@ -52,6 +53,7 @@ app.use("/api/auth", authRouter);
 app.use("/api/restaurant", restaurantRouter);
 app.use("/api/orders", orderRouter);
 app.use("/api/payment", paymentRouter);
+app.use("/api/dispatch", dispatchRouter)
 
 // 6. Global Error Handler
 app.use(

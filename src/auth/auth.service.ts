@@ -13,28 +13,33 @@ const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID)
 
 export class AuthService {
   // ------------------ REGISTER ------------------
-  static async registerUser(
+ static async registerUser(
     name: string,
     email: string,
     password: string,
     phone: string, 
     role: "CUSTOMER" | "VENDOR" | "DISPATCHER" | "RIDER"  = "CUSTOMER",
     termsAcceptedAt: Date,
-    address?:string
+    address?: string
   ) {
+    // 1. Check if user already exists
     const existingUser = await prisma.user.findUnique({ where: { email } });
 
- if (existingUser) {
+    if (existingUser) {
       if (!existingUser.isVerified) {
+        // If unverified, update details and resend OTP
         const updatedUser = await prisma.user.update({
           where: { id: existingUser.id },
           data: {
             termsAcceptedAt: termsAcceptedAt, 
             name: name,
             phone: phone, 
-            address:address
+            address: address,
+            role: role // Update role in case they changed it
           }
         });
+        
+        // Regenerate OTP
         const code = await this.generateOtp(updatedUser.id);
         await sendOtPEmail(updatedUser.email, code);
 
@@ -44,37 +49,64 @@ export class AuthService {
           { expiresIn: "30m" } 
         );
 
-        // Return the UPDATED user, not the old 'existingUser'
         return { user: updatedUser, token };
       }
       throw new Error("This email is already registered. Please login.");
     }
+
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    const user = await prisma.user.create({
-      data: {
-        name,
-        email,
-        password: hashedPassword,
-        phone,
-        role,
-        isVerified: false,
-        termsAcceptedAt: termsAcceptedAt,
-        address
-      },
+    // 2. ATOMIC TRANSACTION: Create User + (Optional) LogisticsPartner
+    const result = await prisma.$transaction(async (tx) => {
+        // A. Create the base User
+        const user = await tx.user.create({
+          data: {
+            name,
+            email,
+            password: hashedPassword,
+            phone,
+            role,
+            isVerified: false,
+            termsAcceptedAt: termsAcceptedAt,
+            address
+          },
+        });
+
+        // B. If DISPATCHER, automatically create the LogisticsPartner profile
+        if (role === "DISPATCHER") {
+            // Validate required fields for Logistics Partner
+            if (!address) {
+                // You can either throw an error or use a placeholder
+                // throw new Error("Address is required for Logistics Companies."); 
+            }
+
+            await tx.logisticsPartner.create({
+                data: {
+                    name: `${name}'s Logistics`, // Default business name
+                    email: email, // Use owner's email
+                    phone: phone, // Use owner's phone
+                    address: address || "Update Your Office Address",
+                    ownerId: user.id
+                }
+            });
+        }
+
+        return user;
     });
 
-    const code = await this.generateOtp(user.id);
+    // 3. Generate OTP & Token (Outside transaction to keep it fast)
+    const code = await this.generateOtp(result.id);
 
     const token = jwt.sign(
-      { userId: user.id, role: user.role },
+      { userId: result.id, role: result.role },
       process.env.JWT_SECRET as string,
       { expiresIn: "30m" } 
     );
 
-    await sendOtPEmail(user.email, code);
+    // 4. Send Email (Non-blocking)
+    sendOtPEmail(result.email, code).catch(err => console.error("Failed to send OTP email:", err));
 
-    return { user, token };
+    return { user: result, token };
   }
 
   // ------------------ LOGIN ------------------

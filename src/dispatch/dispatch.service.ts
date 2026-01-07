@@ -14,10 +14,11 @@ export class DispatchService {
 
     // B. Get "My Active Orders"
     // Since OrderService AUTO-ASSIGNS them to you, we just fetch your orders.
-    const myOrders = await prisma.order.findMany({
+    const allOrders = await prisma.order.findMany({
       where: {
         logisticsPartnerId: partner.id, // Only my orders
-        status: { in: ['PREPARING', 'OUT_FOR_DELIVERY'] } // Active work
+        status: { in: ['PREPARING', 'OUT_FOR_DELIVERY'] }, // Active work
+        OR:[{logisticsPartnerId:null}, {logisticsPartnerId:partner.id}]
       },
       include: { restaurant: true, customer: true },
       orderBy: { createdAt: 'desc' }
@@ -45,7 +46,7 @@ export class DispatchService {
       stats,
       
       // D. Map to Frontend Format
-      activeOrders: myOrders.map(order => ({
+      activeOrders: allOrders.map(order => ({
         id: order.id,
         status: order.status,
         deliveryFee: order.deliveryFee,

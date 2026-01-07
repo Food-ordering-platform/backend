@@ -310,17 +310,17 @@ export class OrderService {
 
     // ✅ Post-process the data to add 'vendorFoodTotal'
     return orders.map((order) => {
-        return {
-            ...order,
-            // Calculate it here once. 
-            // If you change the fee in config, this updates automatically.
-            vendorFoodTotal: order.totalAmount - ((order.deliveryFee + PRICING.PLATFORM_FEE) * 0.85 )
-        };
+      return {
+        ...order,
+        // Calculate it here once.
+        // If you change the fee in config, this updates automatically.
+        vendorFoodTotal:
+          order.totalAmount - (order.deliveryFee + PRICING.PLATFORM_FEE) * 0.85,
+      };
     });
   }
-  
 
-   static async distributeVendorEarnings(orderId: string) {
+  static async distributeVendorEarnings(orderId: string) {
     const order = await prisma.order.findUnique({
       where: { id: orderId },
       include: { restaurant: true },
@@ -331,7 +331,8 @@ export class OrderService {
     }
 
     // LOGIC: Total - Delivery - Platform Fee = Food Money
-    const foodRevenue = order.totalAmount - (order.deliveryFee - PRICING.PLATFORM_FEE);
+    const foodRevenue =
+      order.totalAmount - (order.deliveryFee - PRICING.PLATFORM_FEE);
     const vendorShare = foodRevenue * 0.85; // 85% for Vendor
 
     // Create the Transaction Record
@@ -348,8 +349,14 @@ export class OrderService {
     });
   }
 
+  // =================================================================
+  // UPDATE ORDER STATUS (Modified for Auto-Assignment)
+  // =================================================================
   static async updateOrderStatus(orderId: string, status: OrderStatus) {
-    const order = await prisma.order.findUnique({ where: { id: orderId }, include:{restaurant:true} });
+    const order = await prisma.order.findUnique({
+      where: { id: orderId },
+      include: { restaurant: true },
+    });
     if (!order) throw new Error("Order not found");
 
     OrderStateMachine.validateTransition(order.status, status);
@@ -366,6 +373,7 @@ export class OrderService {
       }
     }
 
+    // 1. Update the Status
     const updatedOrder = await prisma.order.update({
       where: { id: orderId },
       data: { status, paymentStatus: newPaymentStatus },
@@ -373,38 +381,45 @@ export class OrderService {
     });
 
     // ============================================================
-    // ✅ NEW AUTOMATIC DISPATCH LOGIC
+    // ✅ NEW: AUTO-ASSIGN TO LOGISTICS PARTNER
     // ============================================================
-    try {
-        const io = getSocketIO();
-        
-        // As soon as Vendor says "CONFIRMED" (Accepts), we notify Dispatchers
-        if (status === "PREPARING") {
-            
-            // Broadcast to the global "dispatchers" room
-            io.to("dispatchers").emit("new_dispatcher_request", {
-                orderId: order.id,
-                status: status,
-                restaurantName: order.restaurant.name,
-                restaurantAddress: order.restaurant.address || "Warri", 
-                customerAddress: order.deliveryAddress,
-                totalAmount: order.totalAmount,
-                time: new Date().toISOString()
-            });
-            
-            console.log(`🚀 Auto-Dispatched Order #${order.reference} to Riders`);
-        }
-    } catch (error) {
-        console.log("Socket emit failed", error);
-    }
+    if (status === "PREPARING") {
+      try {
+        // Find the SINGLE logistics partner (since you are the only one)
+        const defaultPartner = await prisma.logisticsPartner.findFirst();
 
-    if (status === "DELIVERED" && order.paymentStatus === "PAID") {
-        try {
-            await OrderService.distributeVendorEarnings(order.id);
-        } catch (error) {
-            console.error("CRITICAL: Failed to distribute earnings", error);
-            // In a real app, you'd send an alert to Admin here
+        if (defaultPartner) {
+          await prisma.order.update({
+            where: { id: orderId },
+            data: { logisticsPartnerId: defaultPartner.id },
+          });
+          console.log(
+            `🚚 Auto-assigned Order #${order.reference} to ${defaultPartner.name}`
+          );
         }
+
+        // Socket Notification (Notify Dispatcher App to refresh)
+        const io = getSocketIO();
+        io.to("dispatchers").emit("new_dispatcher_request", {
+          orderId: order.id,
+          status: status,
+          restaurantName: order.restaurant.name,
+          restaurantAddress: order.restaurant.address || "Warri",
+          customerAddress: order.deliveryAddress,
+          totalAmount: order.totalAmount,
+          time: new Date().toISOString(),
+        });
+      } catch (error) {
+        console.error("Auto-assign/Socket error:", error);
+      }
+    }
+    if (status === "DELIVERED" && order.paymentStatus === "PAID") {
+      try {
+        await OrderService.distributeVendorEarnings(order.id);
+      } catch (error) {
+        console.error("CRITICAL: Failed to distribute earnings", error);
+        // In a real app, you'd send an alert to Admin here
+      }
     }
 
     if (updatedOrder.customer && updatedOrder.customer.email) {
@@ -418,6 +433,4 @@ export class OrderService {
 
     return updatedOrder;
   }
-
- 
 }

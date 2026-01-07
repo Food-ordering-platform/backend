@@ -5,8 +5,8 @@ import { authMiddleware } from "../auth/auth.middleware";
 const router = Router();
 
 // Dispatcher (App User) Endpoints
-router.get("/dispatcher/dashboard", authMiddleware, DispatchController.getDispatcherDashboard);
-router.post("/dispatcher/accept", authMiddleware, DispatchController.acceptOrder);
+router.get("/dispatch/dashboard", authMiddleware, DispatchController.getDispatcherDashboard);
+router.post("/dispatch/accept", authMiddleware, DispatchController.acceptOrder);
 
 // Rider (Web Link) Public Endpoints
 router.get("/task/:trackingId", DispatchController.getRiderTask);

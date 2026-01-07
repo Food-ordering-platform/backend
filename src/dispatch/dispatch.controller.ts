@@ -3,14 +3,20 @@ import { DispatchService } from "./dispatch.service";
 
 export class DispatchController {
   
+  static async getDispatcherDashboard(req: Request, res: Response) {
+    try {
+        const userId = (req as any).user.id; 
+        const data = await DispatchService.getDispatcherDashboard(userId);
+        return res.status(200).json({ success: true, data });
+    } catch (err: any) {
+        return res.status(500).json({ success: false, message: err.message });
+    }
+  }
+
   static async acceptOrder(req: Request, res: Response) {
       try {
-          // FIX: Use .id instead of .userId
-          const userId = (req as any).user.id; 
+          const userId = (req as any).user.id;
           const { orderId } = req.body;
-          
-          if(!orderId) return res.status(400).json({ success: false, message: "Order ID required"});
-
           const order = await DispatchService.acceptOrder(userId, orderId);
           return res.status(200).json({ success: true, message: "Order Accepted", data: order });
       } catch (err: any) {
@@ -18,22 +24,38 @@ export class DispatchController {
       }
   }
 
-  // For the Logistics Company Manager
-  static async getDispatcherDashboard(req: Request, res: Response) {
+  // ✅ PUBLIC: Get Task Details
+  static async getRiderTask(req: Request, res: Response) {
     try {
-        // FIX: Use .id instead of .userId
-        const userId = (req as any).user.id;
-        
-        // Defensive check (optional but good for debugging)
-        if (!userId) {
-            return res.status(401).json({ success: false, message: "User ID not found in token" });
-        }
-
-        const data = await DispatchService.getDispatcherDashboard(userId);
+        const { trackingId } = req.params;
+        const data = await DispatchService.getRiderTask(trackingId);
         return res.status(200).json({ success: true, data });
     } catch (err: any) {
-        console.error("Dashboard Error:", err);
-        return res.status(500).json({ success: false, message: err.message });
+        return res.status(404).json({ success: false, message: err.message });
     }
+  }
+
+  // ✅ PUBLIC: Rider Picked Up
+  static async pickupOrder(req: Request, res: Response) {
+    try {
+      const { trackingId } = req.body;
+      if (!trackingId) return res.status(400).json({ message: "Tracking ID required" });
+      
+      const result = await DispatchService.pickupOrder(trackingId);
+      return res.status(200).json(result);
+    } catch (err: any) {
+      return res.status(400).json({ success: false, message: err.message });
+    }
+  }
+
+  // ✅ PUBLIC: Complete Delivery
+  static async completeDelivery(req: Request, res: Response) {
+      try {
+        const { trackingId, otp } = req.body;
+        const result = await DispatchService.completeDelivery(trackingId, otp);
+        return res.status(200).json(result);
+      } catch (err: any) {
+        return res.status(400).json({ success: false, message: err.message });
+      }
   }
 }

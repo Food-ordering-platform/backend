@@ -4,10 +4,13 @@ import { authMiddleware } from "../auth/auth.middleware";
 
 const router = Router();
 
-// Rider Endpoints
-router.post("/rider/accept", authMiddleware, DispatchController.acceptOrder);
+// Dispatcher (App User) Endpoints
+router.get("/dispatcher/dashboard", authMiddleware, DispatchController.getDispatcherDashboard);
+router.post("/dispatcher/accept", authMiddleware, DispatchController.acceptOrder);
 
-// Manager Endpoints
-router.get("/dashboard", authMiddleware, DispatchController.getDispatcherDashboard);
+// Rider (Web Link) Public Endpoints
+router.get("/task/:trackingId", DispatchController.getRiderTask);
+router.post("/task/pickup", DispatchController.pickupOrder);     // 👈 Added this
+router.post("/task/complete", DispatchController.completeDelivery); // 👈 Added this
 
 export default router;

@@ -79,6 +79,37 @@ export class DispatchService {
     });
   }
 
+  static async getRiderTask(trackingId: string) {
+    const order = await prisma.order.findUnique({
+        where: { trackingId },
+        include: { restaurant: true, customer: true, items: true }
+    });
+
+    if (!order) throw new Error("Task not found");
+
+    return {
+        id: order.id,
+        status: order.status,
+        deliveryFee: order.deliveryFee,
+        trackingId: order.trackingId,
+        deliveryAddress: order.deliveryAddress,
+        deliveryLatitude: order.deliveryLatitude,
+        deliveryLongitude: order.deliveryLongitude,
+        customer: {
+            name: order.customer.name,
+            phone: order.customer.phone
+        },
+        vendor: {
+            name: order.restaurant.name,
+            address: order.restaurant.address,
+            phone: order.restaurant.phone,
+            latitude: order.restaurant.latitude,
+            longitude: order.restaurant.longitude
+        },
+        items: order.items
+    };
+  }
+
   // ... (pickupOrder and completeDelivery remain largely the same, just ensure they handle status transitions)
   static async pickupOrder(trackingId: string) {
     const order = await prisma.order.findUnique({ where: { trackingId } });

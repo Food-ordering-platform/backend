@@ -7,6 +7,8 @@ const router = Router();
 // Dispatcher (App User) Endpoints
 router.get("/dashboard", authMiddleware, DispatchController.getDispatcherDashboard);
 router.post("/accept", authMiddleware, DispatchController.acceptOrder);
+// Add this line to your routes
+router.post("/assign-rider", DispatchController.assignLinkRider);
 
 // Rider (Web Link) Public Endpoints
 router.get("/task/:trackingId", DispatchController.getRiderTask);

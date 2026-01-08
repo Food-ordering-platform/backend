@@ -166,6 +166,9 @@ model Order {
   riderId      String?
   rider        User?    @relation("RiderOrders", fields: [riderId], references: [id])
 
+  riderName     String?
+  riderPhone    String?
+
   // === NEW FIELDS FOR LOGISTICS ===
   trackingId        String?  @unique // The "Rider Link" ID (e.g. "task-abc-123")
   deliveryCode      String?  // The OTP the customer gives the rider (e.g. "4590")

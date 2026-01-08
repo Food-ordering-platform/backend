@@ -48,6 +48,21 @@ export class DispatchController {
     }
   }
 
+  // Add this method inside DispatchController class
+  static async assignLinkRider(req: Request, res: Response) {
+      try {
+        const { trackingId, name, phone } = req.body;
+        if (!trackingId || !name || !phone) {
+             return res.status(400).json({ message: "Name and Phone required" });
+        }
+        
+        const result = await DispatchService.assignLinkRider(trackingId, name, phone);
+        return res.status(200).json(result);
+      } catch (err: any) {
+        return res.status(400).json({ success: false, message: err.message });
+      }
+  }
+
   // ✅ PUBLIC: Complete Delivery
   static async completeDelivery(req: Request, res: Response) {
       try {

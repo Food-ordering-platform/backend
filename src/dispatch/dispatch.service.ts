@@ -91,7 +91,12 @@ export class DispatchService {
         id: order.id,
         status: order.status,
         deliveryFee: order.deliveryFee,
+        deliveryCode: order.deliveryCode, 
         trackingId: order.trackingId,
+        // Pass the Rider Info back
+        riderName: order.riderName, 
+        riderPhone: order.riderPhone,
+        
         deliveryAddress: order.deliveryAddress,
         deliveryLatitude: order.deliveryLatitude,
         deliveryLongitude: order.deliveryLongitude,
@@ -110,6 +115,35 @@ export class DispatchService {
     };
   }
 
+  // 🚀 NEW METHOD: Link Rider Identity to Order
+  static async assignLinkRider(trackingId: string, name: string, phone: string) {
+    const order = await prisma.order.findUnique({ where: { trackingId } });
+    if (!order) throw new Error("Order not found");
+
+    if (order.riderName) {
+        throw new Error("This order has already been claimed by " + order.riderName);
+    }
+
+    await prisma.order.update({
+        where: { id: order.id },
+        data: { 
+            riderName: name,
+            riderPhone: phone
+        }
+    });
+
+    // Notify Dispatcher that someone claimed it
+    const io = getSocketIO();
+    if(order.logisticsPartnerId) {
+        // You can listen for this event on the Dispatch Dashboard to update the UI live
+        io.emit(`partner_${order.logisticsPartnerId}_update`, { 
+            message: `${name} picked up Order #${order.id.slice(-4)}` 
+        });
+    }
+
+    return { success: true };
+  }
+  
   // ... (pickupOrder and completeDelivery remain largely the same, just ensure they handle status transitions)
   static async pickupOrder(trackingId: string) {
     const order = await prisma.order.findUnique({ where: { trackingId } });

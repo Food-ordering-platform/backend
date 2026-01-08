@@ -197,6 +197,7 @@ model OrderItem {
 enum OrderStatus {
   PENDING
   PREPARING
+  READY_FOR_PICKUP   // <--- ADD THIS LINE
   OUT_FOR_DELIVERY 
   DELIVERED
   CANCELLED

@@ -12,7 +12,10 @@ export class OrderStateMachine {
     PENDING: ["PREPARING", "CANCELLED"],
 
     //Kitchen is working
-    PREPARING: ["OUT_FOR_DELIVERY", "CANCELLED"],
+    PREPARING: ["READY_FOR_PICKUP", "CANCELLED"],
+
+    ///food is ready rider picks it up
+    READY_FOR_PICKUP: ["OUT_FOR_DELIVERY", "CANCELLED"],
 
     //Rider has picked up
     OUT_FOR_DELIVERY: ["DELIVERED", "CANCELLED"],

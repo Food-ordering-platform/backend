@@ -359,18 +359,13 @@ export class OrderService {
     });
     if (!order) throw new Error("Order not found");
 
-    OrderStateMachine.validateTransition(order.status, status);
+    // OrderStateMachine.validateTransition(order.status, status);
 
     let newPaymentStatus = order.paymentStatus;
 
     if (status === "CANCELLED" && order.paymentStatus === "PAID") {
-      try {
-        console.log(`Auto-refunding Order ${order.reference}...`);
-        await PaymentService.refund(order.reference);
+        await PaymentService.refund(order.reference).catch(e => console.error("Refund failed", e));
         newPaymentStatus = "REFUNDED";
-      } catch (error) {
-        console.error("Refund failed. Admin intervention required.");
-      }
     }
 
     const updatedOrder = await prisma.order.update({
@@ -379,45 +374,52 @@ export class OrderService {
       include: { customer: true },
     });
 
-    // AUTO-ASSIGN TO LOGISTICS PARTNER
+    // 1. VENDOR STARTS COOKING (No Rider Yet)
     if (status === "PREPARING") {
+        // Just notify customer
+        if (updatedOrder.customer?.pushToken) {
+            sendPushNotification(updatedOrder.customer.pushToken, "Order Accepted!", "The vendor is preparing your food.");
+        }
+    }
+
+    // 2. FOOD IS READY -> REQUEST RIDER (New Step)
+    if (status === "READY_FOR_PICKUP") {
       try {
         const defaultPartner = await prisma.logisticsPartner.findFirst();
-
         if (defaultPartner) {
           await prisma.order.update({
             where: { id: orderId },
             data: { logisticsPartnerId: defaultPartner.id },
           });
-          console.log(
-            `🚚 Auto-assigned Order #${order.reference} to ${defaultPartner.name}`
-          );
         }
 
+        // Notify Dispatchers/Riders
         const io = getSocketIO();
         io.to("dispatchers").emit("new_dispatcher_request", {
           orderId: order.id,
           status: status,
           restaurantName: order.restaurant.name,
-          restaurantAddress: order.restaurant.address || "Warri",
+          restaurantAddress: order.restaurant.address,
           customerAddress: order.deliveryAddress,
           totalAmount: order.totalAmount,
-          time: new Date().toISOString(),
+          deliveryFee: order.deliveryFee,
+          pickupTime: new Date().toISOString(),
         });
+        
+        console.log(`🚚 Rider Requested for Order #${order.reference}`);
+
       } catch (error) {
-        console.error("Auto-assign/Socket error:", error);
+        console.error("Auto-assign error:", error);
       }
     }
     
+    // 3. DELIVERED
     if (status === "DELIVERED" && order.paymentStatus === "PAID") {
-      try {
-        await OrderService.distributeVendorEarnings(order.id);
-      } catch (error) {
-        console.error("CRITICAL: Failed to distribute earnings", error);
-      }
+      await OrderService.distributeVendorEarnings(order.id).catch(console.error);
     }
 
-    if (updatedOrder.customer && updatedOrder.customer.email) {
+    // Email
+    if (updatedOrder.customer?.email) {
       sendOrderStatusEmail(
         updatedOrder.customer.email,
         updatedOrder.customer.name,

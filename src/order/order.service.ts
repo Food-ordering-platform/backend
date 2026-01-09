@@ -1,23 +1,28 @@
 import { OrderStatus, PrismaClient } from "../../generated/prisma";
 import { PaymentService } from "../payment/payment.service";
 import { randomBytes } from "crypto";
-import {  sendDeliveryCode, sendOrderStatusEmail } from "../utils/mailer"; // Import Mailer class + standalone function
+import { sendDeliveryCode, sendOrderStatusEmail } from "../utils/mailer";
 import { sendPushNotification } from "../utils/notification";
 import { getSocketIO } from "../utils/socket";
 import { calculateDistance, calculateDeliveryFee } from "../utils/haversine";
-import { OrderStateMachine } from "../utils/order-state-machine";
 import { PRICING } from "../config/pricing";
 
 const prisma = new PrismaClient();
-
-// 💰 PRICING CONSTANTS
-const PLATFORM_FEE = 350;
 
 function generateReference(): string {
   return randomBytes(12).toString("hex");
 }
 
 export class OrderService {
+  
+  // ✅ HELPER: Centralized Calculation Logic
+  // Formula: (Total - Delivery - PlatformFee) * 0.85
+  private static calculateVendorShare(totalAmount: number, deliveryFee: number): number {
+    const foodRevenue = totalAmount - (deliveryFee + PRICING.PLATFORM_FEE);
+    const vendorShare = foodRevenue * 0.85; // Vendor gets 85% of the food value
+    return Math.max(0, vendorShare); // Prevent negative earnings
+  }
+
   // =================================================================
   // 1. GET QUOTE
   // =================================================================
@@ -49,19 +54,20 @@ export class OrderService {
       0
     );
 
-    const totalAmount = subtotal + deliveryFee + PLATFORM_FEE;
+    // ✅ FIX: Use Config Constant
+    const totalAmount = subtotal + deliveryFee + PRICING.PLATFORM_FEE;
 
     return {
       subtotal,
       deliveryFee,
-      platformFee: PLATFORM_FEE,
+      platformFee: PRICING.PLATFORM_FEE,
       totalAmount,
       distanceKm: parseFloat(distance.toFixed(2)),
     };
   }
 
   // =================================================================
-  // 2. CREATE ORDER (With Dynamic Delivery Code)
+  // 2. CREATE ORDER
   // =================================================================
   static async createOrderWithPayment(
     customerId: string,
@@ -75,7 +81,6 @@ export class OrderService {
     customerEmail: string,
     idempotencyKey?: string
   ) {
-    // 🛡️ 1. Idempotency Check
     if (idempotencyKey) {
       const existingOrder = await prisma.order.findUnique({
         where: { idempotencyKey },
@@ -90,7 +95,6 @@ export class OrderService {
       }
     }
 
-    // A. Verify Restaurant
     const restaurant = await prisma.restaurant.findUnique({
       where: { id: restaurantId },
       include: { owner: true },
@@ -98,7 +102,6 @@ export class OrderService {
 
     if (!restaurant) throw new Error("Restaurant not found");
 
-    // B. Calculate Delivery Fee
     let deliveryFee = 0;
     if (
       restaurant.latitude &&
@@ -114,10 +117,9 @@ export class OrderService {
       );
       deliveryFee = calculateDeliveryFee(distance);
     } else {
-      deliveryFee = 500; // Fallback
+      deliveryFee = 500;
     }
 
-    // C. Verify Items & Calculate Subtotal
     const menuItemIds = items.map((item) => item.menuItemId);
     const dbMenuItems = await prisma.menuItem.findMany({
       where: { id: { in: menuItemIds } },
@@ -141,10 +143,9 @@ export class OrderService {
       };
     });
 
-    // D. Final Total
-    const finalTotal = subtotal + deliveryFee + PLATFORM_FEE;
+    // ✅ FIX: Use Config Constant
+    const finalTotal = subtotal + deliveryFee + PRICING.PLATFORM_FEE;
 
-    // E. Generate Reference
     let reference = generateReference();
     let referenceExists = true;
     while (referenceExists) {
@@ -153,7 +154,6 @@ export class OrderService {
       else reference = generateReference();
     }
 
-    // F. Initialize Payment
     const checkoutUrl = await PaymentService.initiatePayment(
       finalTotal,
       customerName,
@@ -161,11 +161,8 @@ export class OrderService {
       reference
     );
 
-    // ✅ G. GENERATE DELIVERY CODE (INSIDE FUNCTION)
-    // This ensures every order gets a unique random 4-digit code
     const deliveryCode = Math.floor(1000 + Math.random() * 9000).toString();
 
-    // H. Save Order
     const order = await prisma.order.create({
       data: {
         customerId,
@@ -181,7 +178,7 @@ export class OrderService {
         reference,
         idempotencyKey,
         checkoutUrl,
-        deliveryCode: deliveryCode, // <--- SAVED HERE
+        deliveryCode: deliveryCode,
         items: {
           create: validItems,
         },
@@ -191,6 +188,8 @@ export class OrderService {
 
     return { order, checkoutUrl };
   }
+
+  // ... (processSuccessfulPayment, getOrdersByCustomer, getOrderByReference unchanged) ...
 
   static async processSuccessfulPayment(reference: string) {
     const order = await prisma.order.findUnique({
@@ -209,7 +208,6 @@ export class OrderService {
       data: { paymentStatus: "PAID" },
     });
 
-    // Notify Customer (Existing)
     if (order.customer && order.customer.email) {
       sendOrderStatusEmail(
         order.customer.email,
@@ -218,8 +216,6 @@ export class OrderService {
         "PENDING"
       ).catch((e) => console.log("Payment success email failed", e));
 
-      // ✅ NEW: SEND DELIVERY CODE EMAIL
-      // Now that they paid, send them the secret code
       if (order.deliveryCode) {
         sendDeliveryCode(
             order.customer.email, 
@@ -229,7 +225,6 @@ export class OrderService {
       }
     }
 
-    // Notify Vendor (Push)
     if (order.restaurant?.owner?.pushToken) {
       sendPushNotification(
         order.restaurant.owner.pushToken,
@@ -239,7 +234,6 @@ export class OrderService {
       );
     }
 
-    // Notify Vendor (Socket)
     try {
       const io = getSocketIO();
       io.to(`restaurant_${order.restaurantId}`).emit("new_order", {
@@ -254,7 +248,6 @@ export class OrderService {
     return updatedOrder;
   }
 
-  // ... (getOrdersByCustomer, getOrderByReference, getVendorOrders, distributeVendorEarnings - unchanged) ...
   static async getOrdersByCustomer(customerId: string) {
     return prisma.order.findMany({
       where: { customerId },
@@ -303,6 +296,7 @@ export class OrderService {
     });
   }
 
+  // ✅ 3. GET VENDOR ORDERS (Now uses Helper)
   static async getVendorOrders(restaurantId: string) {
     const orders = await prisma.order.findMany({
       where: { restaurantId, paymentStatus: { in: ["PAID", "REFUNDED"] } },
@@ -316,12 +310,13 @@ export class OrderService {
     return orders.map((order) => {
       return {
         ...order,
-        vendorFoodTotal:
-          order.totalAmount - (order.deliveryFee + PRICING.PLATFORM_FEE) * 0.85,
+        // ✅ Uses the centralized helper (Fixes duplication)
+        vendorFoodTotal: OrderService.calculateVendorShare(order.totalAmount, order.deliveryFee),
       };
     });
   }
 
+  // ✅ 4. DISTRIBUTE EARNINGS (Now uses Helper)
   static async distributeVendorEarnings(orderId: string) {
     const order = await prisma.order.findUnique({
       where: { id: orderId },
@@ -332,8 +327,8 @@ export class OrderService {
       throw new Error(`Order with ID ${orderId} not found`);
     }
 
-    const foodRevenue = order.totalAmount - (order.deliveryFee +  PRICING.PLATFORM_FEE);
-    const vendorShare = foodRevenue * 0.85;
+    // ✅ Uses the centralized helper (Fixes duplication)
+    const vendorShare = OrderService.calculateVendorShare(order.totalAmount, order.deliveryFee);
 
     await prisma.transaction.create({
       data: {
@@ -348,17 +343,13 @@ export class OrderService {
     });
   }
 
-  // =================================================================
-  // UPDATE ORDER STATUS (Modified for Auto-Assignment)
-  // =================================================================
+  // ... (updateOrderStatus unchanged) ...
   static async updateOrderStatus(orderId: string, status: OrderStatus) {
     const order = await prisma.order.findUnique({
       where: { id: orderId },
       include: { restaurant: true },
     });
     if (!order) throw new Error("Order not found");
-
-    // OrderStateMachine.validateTransition(order.status, status);
 
     let newPaymentStatus = order.paymentStatus;
 
@@ -373,15 +364,12 @@ export class OrderService {
       include: { customer: true },
     });
 
-    // 1. VENDOR STARTS COOKING (No Rider Yet)
     if (status === "PREPARING") {
-        // Just notify customer
         if (updatedOrder.customer?.pushToken) {
             sendPushNotification(updatedOrder.customer.pushToken, "Order Accepted!", "The vendor is preparing your food.");
         }
     }
 
-    // 2. FOOD IS READY -> REQUEST RIDER (New Step)
     if (status === "READY_FOR_PICKUP") {
       try {
         const defaultPartner = await prisma.logisticsPartner.findFirst();
@@ -392,7 +380,6 @@ export class OrderService {
           });
         }
 
-        // Notify Dispatchers/Riders
         const io = getSocketIO();
         io.to("dispatchers").emit("new_dispatcher_request", {
           orderId: order.id,
@@ -412,12 +399,10 @@ export class OrderService {
       }
     }
     
-    // 3. DELIVERED
     if (status === "DELIVERED" && order.paymentStatus === "PAID") {
       await OrderService.distributeVendorEarnings(order.id).catch(console.error);
     }
 
-    // Email
     if (updatedOrder.customer?.email) {
       sendOrderStatusEmail(
         updatedOrder.customer.email,

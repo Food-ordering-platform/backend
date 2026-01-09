@@ -278,11 +278,13 @@ export class DispatchService {
       balance: partner.walletBalance, // This matches the Dashboard Balance
       transactions: transactions.map((t) => ({
         id: t.id,
-        type: t.type,
         amount: t.amount,
-        desc: t.description,
-        date: t.createdAt,
+        type: t.type,
+        category: t.category, // Added
+        reference: t.reference, // Added
+        description: t.description, // ✅ FIXED: Was 'desc'
         status: t.status,
+        createdAt: t.createdAt, // ✅ FIXED: Was 'date'
       })),
     };
   }

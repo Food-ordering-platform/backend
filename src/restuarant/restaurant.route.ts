@@ -37,6 +37,7 @@ router.get("/:id/earnings", authMiddleware, RestaurantController.getEarnings);
 router.get("/:id/transactions", authMiddleware, RestaurantController.getTransactions)
 
 //9. Withdraw Money
-router.post("/:id/withdraw", authMiddleware, RestaurantController.requestPayout);
+// [FIXED] Route name changed to match frontend service call (/payout)
+router.post("/:id/payout", authMiddleware, RestaurantController.requestPayout);
 
 export default router;

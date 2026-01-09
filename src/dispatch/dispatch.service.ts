@@ -255,6 +255,8 @@ export class DispatchService {
 
     return { success: true };
   }
+
+  // [UPDATED] Get Partner Wallet
   static async getPartnerWallet(userId: string) {
     // 1. Find the Logistics Partner owned by this user
     const partner = await prisma.logisticsPartner.findUnique({
@@ -262,33 +264,47 @@ export class DispatchService {
     });
 
     if (!partner) {
-      // If user is just a rider (not owner), they might not see balance in MVP.
-      // Or return 0 if no partner found.
-      return { balance: 0, transactions: [] };
+      return { availableBalance: 0, pendingBalance: 0, transactions: [] };
     }
 
-    // 2. Fetch Transactions for this Owner
+    // 2. Fetch Transactions
     const transactions = await prisma.transaction.findMany({
       where: { userId: userId },
       orderBy: { createdAt: "desc" },
       take: 50,
     });
 
+    // 3. Calculate Pending Balance (Active Deliveries)
+    const activeOrders = await prisma.order.findMany({
+      where: {
+        logisticsPartnerId: partner.id,
+        status: { in: ["READY_FOR_PICKUP", "OUT_FOR_DELIVERY"] },
+      },
+      select: { deliveryFee: true },
+    });
+
+    const pendingBalance = activeOrders.reduce(
+      (sum, o) => sum + (o.deliveryFee || 0),
+      0
+    );
+
     return {
-      balance: partner.walletBalance, // This matches the Dashboard Balance
+      availableBalance: partner.walletBalance, // Renamed from 'balance'
+      pendingBalance: pendingBalance, // Added this
       transactions: transactions.map((t) => ({
         id: t.id,
         amount: t.amount,
         type: t.type,
-        category: t.category, // Added
-        reference: t.reference, // Added
-        description: t.description, // ✅ FIXED: Was 'desc'
+        category: t.category,
+        reference: t.reference,
+        description: t.description,
         status: t.status,
-        createdAt: t.createdAt, // ✅ FIXED: Was 'date'
+        createdAt: t.createdAt,
       })),
     };
   }
 
+  // [UPDATED] Request Withdrawal
   static async requestWithdrawal(
     userId: string,
     amount: number,
@@ -298,7 +314,6 @@ export class DispatchService {
       accountName: string;
     }
   ) {
-    // 1. Get Partner details directly to check DB balance
     const partner = await prisma.logisticsPartner.findUnique({
       where: { ownerId: userId },
     });
@@ -306,15 +321,15 @@ export class DispatchService {
     if (!partner) throw new Error("Logistics account not found");
     if (partner.walletBalance < amount) throw new Error("Insufficient funds");
 
-    // 2. Perform Atomic Transaction (Deduct Balance + Create Record)
+    // Atomic Transaction
     return await prisma.$transaction(async (tx) => {
-      // A. Deduct Money from Logistics Partner Balance
+      // 1. Deduct Money
       await tx.logisticsPartner.update({
         where: { id: partner.id },
         data: { walletBalance: { decrement: amount } },
       });
 
-      // B. Create Transaction Record
+      // 2. Create Transaction Record
       const transaction = await tx.transaction.create({
         data: {
           userId,
@@ -322,8 +337,7 @@ export class DispatchService {
           type: TransactionType.DEBIT,
           category: TransactionCategory.WITHDRAWAL,
           status: TransactionStatus.PENDING,
-          // Save bank info in description
-          description: `Withdrawal to ${bankDetails.bankName} - ${bankDetails.accountNumber}`,
+          description: `Withdrawal to ${bankDetails.bankName} (${bankDetails.accountNumber})`,
           reference: `WD-${randomBytes(4).toString("hex").toUpperCase()}`,
         },
       });

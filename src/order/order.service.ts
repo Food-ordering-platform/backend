@@ -332,8 +332,7 @@ export class OrderService {
       throw new Error(`Order with ID ${orderId} not found`);
     }
 
-    const foodRevenue =
-      order.totalAmount - (order.deliveryFee - PRICING.PLATFORM_FEE);
+    const foodRevenue = order.totalAmount - (order.deliveryFee +  PRICING.PLATFORM_FEE);
     const vendorShare = foodRevenue * 0.85;
 
     await prisma.transaction.create({

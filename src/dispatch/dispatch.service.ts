@@ -18,7 +18,7 @@ export class DispatchService {
 
     if (!partner) throw new Error("User is not a Logistics Partner");
 
-    // Fetch relevant orders: Assigned to me OR Waiting for Pickup (Open market)
+    // Fetch relevant orders
     const allOrders = await prisma.order.findMany({
       where: {
         status: { in: ['READY_FOR_PICKUP', 'OUT_FOR_DELIVERY'] },
@@ -31,7 +31,7 @@ export class DispatchService {
       orderBy: { createdAt: 'desc' }
     });
 
-    // Calculate Pending Balance: Fees for active jobs assigned to THIS partner
+    // Calculate Pending Balance
     const pendingOrders = allOrders.filter(
         o => o.logisticsPartnerId === partner.id && o.status !== 'DELIVERED'
     );
@@ -49,11 +49,12 @@ export class DispatchService {
       stats,
       activeOrders: allOrders.map(order => ({
         id: order.id,
+        reference: order.reference, // 🚀 Added this for consistent ID
         status: order.status,
         deliveryFee: order.deliveryFee,
         trackingId: order.logisticsPartnerId === partner.id ? order.trackingId : null, 
+        postedAt: order.updatedAt, // Added for "Just Now" calculation
         
-        // 🚀 Sending Rider Info to Dashboard so Admin knows who claimed it
         riderName: order.riderName,
         riderPhone: order.riderPhone,
 
@@ -71,9 +72,7 @@ export class DispatchService {
     };
   }
 
-  // =================================================================
-  // 2. ACCEPT ORDER (Logistics Admin claims the job)
-  // =================================================================
+  // ... (acceptOrder remains unchanged) ...
   static async acceptOrder(userId: string, orderId: string) {
     const partner = await prisma.logisticsPartner.findUnique({ where: { ownerId: userId } });
     if (!partner) throw new Error("Unauthorized");
@@ -81,7 +80,6 @@ export class DispatchService {
     const order = await prisma.order.findUnique({ where: { id: orderId } });
     if (!order) throw new Error("Order not found");
     
-    // Validation
     if (order.status !== "READY_FOR_PICKUP") {
         throw new Error("Order is not ready for pickup yet.");
     }
@@ -98,7 +96,7 @@ export class DispatchService {
   }
 
   // =================================================================
-  // 3. GET TASK DETAILS (For Rider Link - Public Access with ID)
+  // 3. GET TASK DETAILS (For Rider Link)
   // =================================================================
   static async getRiderTask(trackingId: string) {
     const order = await prisma.order.findUnique({
@@ -110,12 +108,12 @@ export class DispatchService {
 
     return {
         id: order.id,
+        reference: order.reference, // 🚀 Added for consistent ID
         status: order.status,
         deliveryFee: order.deliveryFee,
-        deliveryCode: order.deliveryCode, // (Dev only: Remove in prod if needed)
+        deliveryCode: order.deliveryCode,
         trackingId: order.trackingId,
         
-        // Rider Identity
         riderName: order.riderName,
         riderPhone: order.riderPhone,
 
@@ -137,10 +135,8 @@ export class DispatchService {
         items: order.items
     };
   }
-
-  // =================================================================
-  // 4. ASSIGN GUEST RIDER (When they claim via Link)
-  // =================================================================
+  
+  // ... (assignLinkRider, pickupOrder, completeDelivery unchanged) ...
   static async assignLinkRider(trackingId: string, name: string, phone: string) {
     const order = await prisma.order.findUnique({ where: { trackingId } });
     if (!order) throw new Error("Order not found");
@@ -157,7 +153,6 @@ export class DispatchService {
         }
     });
 
-    // Notify Admin Dashboard live
     const io = getSocketIO();
     if(order.logisticsPartnerId) {
         io.emit(`partner_${order.logisticsPartnerId}_update`, { 
@@ -170,9 +165,6 @@ export class DispatchService {
     return { success: true };
   }
 
-  // =================================================================
-  // 5. PICKUP ORDER (Status -> OUT_FOR_DELIVERY)
-  // =================================================================
   static async pickupOrder(trackingId: string) {
     const order = await prisma.order.findUnique({ where: { trackingId } });
     if (!order) throw new Error("Task not found");
@@ -182,31 +174,23 @@ export class DispatchService {
         data: { status: "OUT_FOR_DELIVERY" }
     });
 
-    // Notify Parties
     const io = getSocketIO();
     io.to("dispatchers").emit("order_updated", { orderId: order.id, status: "OUT_FOR_DELIVERY" });
     
-    // Notify Customer (Optional: Add push notification here)
-
     return { success: true, status: updatedOrder.status };
   }
 
-  // =================================================================
-  // 6. COMPLETE DELIVERY (Verify Code & Pay)
-  // =================================================================
   static async completeDelivery(trackingId: string, otp: string) {
     const order = await prisma.order.findUnique({ where: { trackingId } });
     if (!order) throw new Error("Order not found");
     
     if (order.deliveryCode !== otp) throw new Error("Incorrect Delivery Code!");
 
-    // 1. Mark Delivered
     await prisma.order.update({
       where: { id: order.id },
       data: { status: "DELIVERED" }
     });
 
-    // 2. Pay Logistics Partner
     if (order.logisticsPartnerId) {
       await prisma.logisticsPartner.update({
         where: { id: order.logisticsPartnerId },
@@ -214,7 +198,6 @@ export class DispatchService {
       });
     }
     
-    // 3. Broadcast
     const io = getSocketIO();
     io.to("dispatchers").emit("order_delivered", { orderId: order.id });
 

@@ -17,7 +17,7 @@ export class OrderService {
   
   // ✅ HELPER: Centralized Calculation Logic
   // Formula: (Total - Delivery - PlatformFee) * 0.85
-  private static calculateVendorShare(totalAmount: number, deliveryFee: number): number {
+   static calculateVendorShare(totalAmount: number, deliveryFee: number): number {
     const foodRevenue = totalAmount - (deliveryFee + PRICING.PLATFORM_FEE);
     const vendorShare = foodRevenue * 0.85; // Vendor gets 85% of the food value
     return Math.max(0, vendorShare); // Prevent negative earnings
@@ -311,6 +311,8 @@ export class OrderService {
       return {
         ...order,
         // ✅ Uses the centralized helper (Fixes duplication)
+        riderName:order.riderName,
+        riderPhone:order.riderPhone,
         vendorFoodTotal: OrderService.calculateVendorShare(order.totalAmount, order.deliveryFee),
       };
     });
@@ -363,6 +365,16 @@ export class OrderService {
       data: { status, paymentStatus: newPaymentStatus },
       include: { customer: true },
     });
+
+    try {
+        const io = getSocketIO();
+        io.to(`restaurant_${order.restaurantId}`).emit("order_updated", { 
+            orderId: order.id,
+            status: status 
+        });
+    } catch (e) {
+        console.error("Socket emit failed", e);
+    }
 
     if (status === "PREPARING") {
         if (updatedOrder.customer?.pushToken) {

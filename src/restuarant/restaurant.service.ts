@@ -3,6 +3,7 @@ import { PrismaClient } from "../../generated/prisma";
 import { uploadToCloudinary } from "../cloudinary/upload";
 import { PRICING } from "../config/pricing";
 import { sendPayoutRequestEmail } from "../utils/mailer";
+import { OrderService } from "../order/order.service";
 
 const prisma = new PrismaClient();
 
@@ -20,7 +21,7 @@ export class RestaurantService {
       throw new Error("You already have a restaurant");
     }
 
-    // 2. Handle File Upload (Ticketer Strategy)
+    // 2. Handle File Upload 
     let imageUrl = undefined;
     if (file) {
       // Use your Cloudinary helper here.
@@ -263,19 +264,16 @@ export class RestaurantService {
       where: {
         restaurantId,
         paymentStatus: "PAID",
-        status: { in: ["PREPARING", "OUT_FOR_DELIVERY"] } // Cooking, Ready, or Out for Delivery
+        status: { in: ["PREPARING", "READY_FOR_PICKUP", "OUT_FOR_DELIVERY"] } // Cooking, Ready, or Out for Delivery
       },
       select: { totalAmount: true, deliveryFee: true }
     });
 
-    let pendingBalance = 0;
-
-    pendingOrders.forEach(order => {
-      const foodRevenue = order.totalAmount - ( order.deliveryFee + PRICING.PLATFORM_FEE);
-      const vendorShare = foodRevenue * 0.85; // Estimate the 85%
-      if (vendorShare > 0) pendingBalance += vendorShare;
-    });
-
+   // Use the shared helper to calculate pending money accurately
+    const pendingBalance = pendingOrders.reduce((sum, order) => {
+      return sum + OrderService.calculateVendorShare(order.totalAmount, order.deliveryFee);
+    }, 0)
+    
     return {
       availableBalance: availableBalance, // Real Money
       pendingBalance: pendingBalance,     // Future Money

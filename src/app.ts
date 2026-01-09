@@ -4,6 +4,7 @@ import morgan from "morgan";
 import session from "express-session";
 import pgSession from "connect-pg-simple";
 import { Pool } from "pg";
+import compression from "compression"
 
 import authRouter from "./auth/auth.route";
 import restaurantRouter from "./restuarant/restaurant.route";
@@ -20,6 +21,8 @@ const PgStore = pgSession(session);
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
 });
+
+app.use(compression())
 
 // 2. HYBRID CORS CONFIGURATION (Crucial for Mobile + Web)
 // Define your web frontend URLs here. Add your production domain later.

@@ -93,11 +93,12 @@ export class DispatchController {
   static async requestWithdrawal(req: Request, res: Response) {
     try {
       const userId = (req as any).user.id;
-      const { amount } = req.body;
-      const result = await DispatchService.requestWithdrawal(
-        userId,
-        Number(amount)
-      );
+      const { amount, bankDetails } = req.body; // Extract bankDetails
+
+      if (!amount || amount <= 0) return res.status(400).json({ message: "Invalid amount" });
+      if (!bankDetails) return res.status(400).json({ message: "Bank details required" });
+
+      const result = await DispatchService.requestWithdrawal(userId, Number(amount), bankDetails);
       return res.status(200).json(result);
     } catch (err: any) {
       return res.status(400).json({ success: false, message: err.message });

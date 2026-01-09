@@ -15,4 +15,7 @@ router.get("/task/:trackingId", DispatchController.getRiderTask);
 router.post("/task/pickup", DispatchController.pickupOrder);     // 👈 Added this
 router.post("/task/complete", DispatchController.completeDelivery); // 👈 Added this
 
+router.get("/wallet", authMiddleware, DispatchController.getPartnerWallet);
+router.post("/wallet/withdraw", authMiddleware, DispatchController.requestWithdrawal);
+
 export default router;

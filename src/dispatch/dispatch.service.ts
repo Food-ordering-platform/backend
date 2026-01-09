@@ -1,5 +1,5 @@
 import { randomBytes } from "crypto";
-import { PrismaClient } from "../../generated/prisma";
+import { PrismaClient, TransactionType, TransactionCategory, TransactionStatus } from "../../generated/prisma";
 import { getSocketIO } from "../utils/socket";
 
 const prisma = new PrismaClient();
@@ -207,21 +207,41 @@ export class DispatchService {
     return { success: true, status: updatedOrder.status };
   }
 
-  static async completeDelivery(trackingId: string, otp: string) {
-    const order = await prisma.order.findUnique({ where: { trackingId } });
+static async completeDelivery(trackingId: string, otp: string) {
+    const order = await prisma.order.findUnique({ 
+        where: { trackingId },
+        include: { logisticsPartner: true } // Include partner to get ownerId
+    });
+    
     if (!order) throw new Error("Order not found");
-
     if (order.deliveryCode !== otp) throw new Error("Incorrect Delivery Code!");
 
+    // 1. Update Order Status
     await prisma.order.update({
       where: { id: order.id },
       data: { status: "DELIVERED" },
     });
 
-    if (order.logisticsPartnerId) {
+    // 2. Credit Logistics Partner & Create Transaction Record
+    if (order.logisticsPartner) {
+      // A. Increment Balance
       await prisma.logisticsPartner.update({
-        where: { id: order.logisticsPartnerId },
+        where: { id: order.logisticsPartner.id },
         data: { walletBalance: { increment: order.deliveryFee } },
+      });
+
+      // B. Create Transaction Record for the Owner (so it shows in App Wallet)
+      await prisma.transaction.create({
+        data: {
+          userId: order.logisticsPartner.ownerId, // Link to the Partner's Admin/Owner
+          amount: order.deliveryFee,
+          type: TransactionType.CREDIT,
+          category: TransactionCategory.ORDER_EARNING,
+          status: TransactionStatus.SUCCESS,
+          orderId: order.id,
+          description: `Delivery Earnings - #${order.reference}`,
+          reference: `TXN-${randomBytes(4).toString("hex").toUpperCase()}`
+        }
       });
     }
 
@@ -229,5 +249,66 @@ export class DispatchService {
     io.to("dispatchers").emit("order_delivered", { orderId: order.id });
 
     return { success: true };
+  }
+static async getPartnerWallet(userId: string) {
+    // 1. Find the Logistics Partner owned by this user
+    const partner = await prisma.logisticsPartner.findUnique({
+      where: { ownerId: userId }
+    });
+
+    if (!partner) {
+        // If user is just a rider (not owner), they might not see balance in MVP.
+        // Or return 0 if no partner found.
+        return { balance: 0, transactions: [] };
+    }
+
+    // 2. Fetch Transactions for this Owner
+    const transactions = await prisma.transaction.findMany({
+      where: { userId: userId },
+      orderBy: { createdAt: 'desc' },
+      take: 50
+    });
+
+    return {
+      balance: partner.walletBalance, // This matches the Dashboard Balance
+      transactions: transactions.map(t => ({
+        id: t.id,
+        type: t.type,
+        amount: t.amount,
+        desc: t.description,
+        date: t.createdAt,
+        status: t.status
+      }))
+    };
+  }
+
+  static async requestWithdrawal(userId: string, amount: number) {
+    const partner = await prisma.logisticsPartner.findUnique({
+      where: { ownerId: userId }
+    });
+
+    if (!partner) throw new Error("Wallet not found");
+    if (partner.walletBalance < amount) throw new Error("Insufficient funds");
+
+    // 1. Deduct from Partner Wallet
+    await prisma.logisticsPartner.update({
+        where: { id: partner.id },
+        data: { walletBalance: { decrement: amount } }
+    });
+
+    // 2. Record Debit Transaction
+    const transaction = await prisma.transaction.create({
+      data: {
+        userId,
+        amount,
+        type: TransactionType.DEBIT,
+        category: TransactionCategory.WITHDRAWAL,
+        status: TransactionStatus.PENDING, 
+        description: "Wallet Withdrawal",
+        reference: `WD-${randomBytes(4).toString("hex").toUpperCase()}`
+      }
+    });
+
+    return { success: true, transaction };
   }
 }

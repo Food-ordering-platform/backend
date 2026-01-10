@@ -264,7 +264,7 @@ export class RestaurantService {
       where: {
         restaurantId,
         paymentStatus: "PAID",
-        status: { in: ["PREPARING"] } // Cooking, Ready, or Out for Delivery
+        status: { in: ["PREPARING", "READY_FOR_PICKUP"] } // Cooking, Ready, or Out for Delivery
       },
       select: { totalAmount: true, deliveryFee: true }
     });

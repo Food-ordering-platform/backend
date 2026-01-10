@@ -6,6 +6,7 @@ import {
   TransactionStatus,
 } from "../../generated/prisma";
 import { getSocketIO } from "../utils/socket";
+import { OrderService } from "../order/order.service";
 
 const prisma = new PrismaClient();
 
@@ -203,6 +204,17 @@ export class DispatchService {
       data: { status: "OUT_FOR_DELIVERY" },
     });
 
+    // 2. 💰 PAY VENDOR NOW (If Customer has Paid)
+    // Logic: Food has left the building, so Vendor has done their job.
+    if (updatedOrder.paymentStatus === "PAID") {
+        console.log(`📦 Order Picked Up. Distributing Vendor Earnings for #${order.reference}`);
+        await OrderService.distributeVendorEarnings(order.id).catch(err => {
+            console.error("❌ Failed to pay vendor on pickup:", err);
+        });
+    } else {
+        console.log(`⚠️ Order Picked Up but NOT PAID. Vendor will be paid upon payment webhook.`);
+    }
+
     const io = getSocketIO();
     io.to("dispatchers").emit("order_updated", {
       orderId: order.id,
@@ -248,6 +260,10 @@ export class DispatchService {
           reference: `TXN-${randomBytes(4).toString("hex").toUpperCase()}`,
         },
       });
+    }
+
+    if (order.paymentStatus === "PAID") {
+        await OrderService.distributeVendorEarnings(order.id).catch(() => {}); 
     }
 
     const io = getSocketIO();

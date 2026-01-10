@@ -411,8 +411,14 @@ export class OrderService {
       }
     }
     
-    if (status === "DELIVERED" && order.paymentStatus === "PAID") {
-      await OrderService.distributeVendorEarnings(order.id).catch(console.error);
+   if (status === "DELIVERED") {
+        // We use 'updatedOrder' to get the latest payment status (in case it changed recently)
+        if (updatedOrder.paymentStatus === "PAID") {
+            console.log("✅ Order Delivered & Paid. Distributing...");
+            await OrderService.distributeVendorEarnings(order.id).catch(console.error);
+        } else {
+            console.warn("⚠️ Order Delivered but NOT PAID yet. Earnings will be distributed upon payment.");
+        }
     }
 
     if (updatedOrder.customer?.email) {

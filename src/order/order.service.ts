@@ -189,7 +189,7 @@ export class OrderService {
     return { order, checkoutUrl };
   }
 
-  // ... (processSuccessfulPayment, getOrdersByCustomer, getOrderByReference unchanged) ...
+
 
   static async processSuccessfulPayment(reference: string) {
     const order = await prisma.order.findUnique({

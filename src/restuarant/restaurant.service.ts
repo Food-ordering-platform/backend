@@ -74,18 +74,18 @@ export class RestaurantService {
             menuItems: true, // nested items
           },
         },
-        orders: {
-          select: {
-            id: true,
-            customerId: true,
-            totalAmount: true,
-            paymentStatus: true,
-            status: true,
-            deliveryAddress: true,
-            createdAt: true,
-            updatedAt: true,
-          },
-        },
+        // orders: {
+        //   select: {
+        //     id: true,
+        //     customerId: true,
+        //     totalAmount: true,
+        //     paymentStatus: true,
+        //     status: true,
+        //     deliveryAddress: true,
+        //     createdAt: true,
+        //     updatedAt: true,
+        //   },
+        // },
       },
     });
   }

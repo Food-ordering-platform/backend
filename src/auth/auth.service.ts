@@ -128,7 +128,7 @@ export class AuthService {
       { expiresIn: "7d" }
     );
 
-    sendLoginAlertEmail(user.email, user.name).catch(e => console.log("Login Email Error", e))
+    sendLoginAlertEmail(user.email, user.name)
     return { token, user };
   }
 
@@ -185,7 +185,7 @@ export class AuthService {
     );
 
     if(user.email) {
-       sendLoginAlertEmail(user.email, user.name).catch(e => console.log("Login email error", e));
+       sendLoginAlertEmail(user.email, user.name)
     }
 
     return { token: jwtToken, user };

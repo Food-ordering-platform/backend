@@ -89,6 +89,32 @@ export async function sendOtPEmail(email: string, otp: string) {
   }
 }
 
+
+export async function sendLoginAlertEmail(email: string, name: string) {
+  const url = getEmailServiceUrl();
+  if (!url) return;
+
+  try {
+    const title = "New Login Detected";
+    const body = `
+      <p>Hi <b>${name}</b>,</p>
+      <p>We noticed a new login to your ChowEazy account.</p>
+      
+      <div style="background: #F3F4F6; padding: 20px; border-radius: 8px; margin: 20px 0; text-align: left; display: inline-block;">
+        <div>⏰ <b>Time:</b> ${new Date().toLocaleString()}</div>
+      </div>
+
+      <p>If this was you, you can safely ignore this email.</p>
+      <p style="color: #EF4444; font-weight: bold;">If this wasn't you, please contact support immediately.</p>
+    `;
+
+    const html = generateEmailHTML(title, body, "🛡️");
+    await axios.post(url, { to: email, subject: "⚠️ New Login to ChowEazy", html });
+  } catch (err: any) {
+    console.error("❌ Login Alert Email Failed:", err.message);
+  }
+}
+
 // ✅ FIX: Now accepts 'orderReference' specifically
 export async function sendOrderStatusEmail(email: string, name: string, orderReference: string, status: string) {
   const url = getEmailServiceUrl();

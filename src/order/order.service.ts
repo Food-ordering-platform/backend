@@ -15,17 +15,13 @@ function generateReference(): string {
 
 export class OrderService {
   
-  // ✅ HELPER: Centralized Calculation Logic
-  // Formula: (Total - Delivery - PlatformFee) * 0.85
    static calculateVendorShare(totalAmount: number, deliveryFee: number): number {
     const foodRevenue = totalAmount - (deliveryFee + PRICING.PLATFORM_FEE);
-    const vendorShare = foodRevenue * 0.85; // Vendor gets 85% of the food value
-    return Math.max(0, vendorShare); // Prevent negative earnings
+    const vendorShare = foodRevenue * 0.85; 
+    return Math.max(0, vendorShare); 
   }
 
-  // =================================================================
-  // 1. GET QUOTE
-  // =================================================================
+  // ... (getOrderQuote and createOrderWithPayment remain unchanged) ...
   static async getOrderQuote(
     restaurantId: string,
     deliveryLatitude: number,
@@ -54,7 +50,6 @@ export class OrderService {
       0
     );
 
-    // ✅ FIX: Use Config Constant
     const totalAmount = subtotal + deliveryFee + PRICING.PLATFORM_FEE;
 
     return {
@@ -66,9 +61,6 @@ export class OrderService {
     };
   }
 
-  // =================================================================
-  // 2. CREATE ORDER
-  // =================================================================
   static async createOrderWithPayment(
     customerId: string,
     restaurantId: string,
@@ -143,7 +135,6 @@ export class OrderService {
       };
     });
 
-    // ✅ FIX: Use Config Constant
     const finalTotal = subtotal + deliveryFee + PRICING.PLATFORM_FEE;
 
     let reference = generateReference();
@@ -189,8 +180,7 @@ export class OrderService {
     return { order, checkoutUrl };
   }
 
-
-
+  // ✅ UPDATED: Sends email with REAL DB reference
   static async processSuccessfulPayment(reference: string) {
     const order = await prisma.order.findUnique({
       where: { reference },
@@ -209,20 +199,13 @@ export class OrderService {
     });
 
     if (order.customer && order.customer.email) {
+      // ✅ FIX: Use order.reference
       sendOrderStatusEmail(
         order.customer.email,
         order.customer.name,
-        order.id,
+        order.reference, // <--- THE FIX
         "PENDING"
       ).catch((e) => console.log("Payment success email failed", e));
-
-      if (order.deliveryCode) {
-        sendDeliveryCode(
-            order.customer.email, 
-            order.deliveryCode, 
-            order.id
-        ).catch((e: any) => console.error("Delivery code email failed", e));
-      }
     }
 
     if (order.restaurant?.owner?.pushToken) {
@@ -296,7 +279,6 @@ export class OrderService {
     });
   }
 
-  // ✅ 3. GET VENDOR ORDERS (Now uses Helper)
   static async getVendorOrders(restaurantId: string) {
     const orders = await prisma.order.findMany({
       where: { restaurantId, paymentStatus: { in: ["PAID", "REFUNDED"] } },
@@ -310,7 +292,6 @@ export class OrderService {
     return orders.map((order) => {
       return {
         ...order,
-        // ✅ Uses the centralized helper (Fixes duplication)
         riderName:order.riderName,
         riderPhone:order.riderPhone,
         vendorFoodTotal: OrderService.calculateVendorShare(order.totalAmount, order.deliveryFee),
@@ -318,7 +299,6 @@ export class OrderService {
     });
   }
 
-  // ✅ 4. DISTRIBUTE EARNINGS (Now uses Helper)
   static async distributeVendorEarnings(orderId: string) {
     const order = await prisma.order.findUnique({
       where: { id: orderId },
@@ -329,7 +309,6 @@ export class OrderService {
       throw new Error(`Order with ID ${orderId} not found`);
     }
 
-    // ✅ Uses the centralized helper (Fixes duplication)
     const vendorShare = OrderService.calculateVendorShare(order.totalAmount, order.deliveryFee);
 
     await prisma.transaction.create({
@@ -345,7 +324,7 @@ export class OrderService {
     });
   }
 
-  // ... (updateOrderStatus unchanged) ...
+  // ✅ UPDATED: Sends delivery code using REAL DB reference
   static async updateOrderStatus(orderId: string, status: OrderStatus) {
     const order = await prisma.order.findUnique({
       where: { id: orderId },
@@ -380,6 +359,15 @@ export class OrderService {
         if (updatedOrder.customer?.pushToken) {
             sendPushNotification(updatedOrder.customer.pushToken, "Order Accepted!", "The vendor is preparing your food.");
         }
+        
+        // ✅ NEW: Send Delivery Code HERE (When Vendor Accepts)
+        if (updatedOrder.customer?.email && updatedOrder.deliveryCode) {
+            sendDeliveryCode(
+                updatedOrder.customer.email,
+                updatedOrder.deliveryCode,
+                updatedOrder.reference // <--- THE FIX: Use real reference
+            ).catch(err => console.error("Failed to send delivery code:", err));
+        }
     }
 
     if (status === "READY_FOR_PICKUP") {
@@ -410,22 +398,13 @@ export class OrderService {
         console.error("Auto-assign error:", error);
       }
     }
-    
-  //  if (status === "DELIVERED") {
-  //       // We use 'updatedOrder' to get the latest payment status (in case it changed recently)
-  //       if (updatedOrder.paymentStatus === "PAID") {
-  //           console.log("✅ Order Delivered & Paid. Distributing...");
-  //           await OrderService.distributeVendorEarnings(order.id).catch(console.error);
-  //       } else {
-  //           console.warn("⚠️ Order Delivered but NOT PAID yet. Earnings will be distributed upon payment.");
-  //       }
-  //   }
 
+    // Standard Status Email (PENDING, PREPARING, CANCELLED, etc.)
     if (updatedOrder.customer?.email) {
       sendOrderStatusEmail(
         updatedOrder.customer.email,
         updatedOrder.customer.name,
-        updatedOrder.id,
+        updatedOrder.reference, // <--- THE FIX: Use real reference
         status
       );
     }

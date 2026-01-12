@@ -7,6 +7,7 @@ import {
 } from "../../generated/prisma";
 import { getSocketIO } from "../utils/socket";
 import { OrderService } from "../order/order.service";
+import { sendOrderStatusEmail } from "../utils/mailer"; // ✅ Import Mailer
 
 const prisma = new PrismaClient();
 
@@ -14,189 +15,99 @@ const generateTrackingId = () =>
   "TRK-" + randomBytes(4).toString("hex").toUpperCase();
 
 export class DispatchService {
-  // =================================================================
-  // 1. DASHBOARD (For Logistics Company Admin)
-  // =================================================================
+  // ... (getDispatcherDashboard, acceptOrder, getRiderTask, assignLinkRider remain unchanged) ...
+  // Please copy those methods from your original file or let me know if you need them repeated.
+  
   static async getDispatcherDashboard(userId: string) {
-    const partner = await prisma.logisticsPartner.findUnique({
-      where: { ownerId: userId },
-    });
+      const partner = await prisma.logisticsPartner.findUnique({ where: { ownerId: userId } });
+      if (!partner) throw new Error("User is not a Logistics Partner");
+      const allOrders = await prisma.order.findMany({
+        where: {
+          OR: [
+            { status: { in: ["READY_FOR_PICKUP", "OUT_FOR_DELIVERY"] }, OR: [{ logisticsPartnerId: partner.id }, { logisticsPartnerId: null }] },
+            { status: "DELIVERED", logisticsPartnerId: partner.id },
+          ],
+        },
+        include: { restaurant: true, customer: true },
+        orderBy: { updatedAt: "desc" },
+        take: 50,
+      });
+      const pendingOrders = allOrders.filter(o => o.logisticsPartnerId === partner.id && o.status !== "DELIVERED");
+      const pendingBalance = pendingOrders.reduce((sum, order) => sum + (order.deliveryFee || 0), 0);
+      const stats = {
+        totalJobs: await prisma.order.count({ where: { logisticsPartnerId: partner.id, status: "DELIVERED" } }),
+        activeJobs: pendingOrders.length,
+      };
+      return {
+        partnerName: partner.name,
+        availableBalance: partner.walletBalance,
+        pendingBalance: pendingBalance,
+        stats,
+        activeOrders: allOrders.map((order) => ({
+          id: order.id,
+          reference: order.reference,
+          status: order.status,
+          deliveryFee: order.deliveryFee,
+          trackingId: order.logisticsPartnerId === partner.id ? order.trackingId : null,
+          postedAt: order.updatedAt,
+          riderName: order.riderName,
+          riderPhone: order.riderPhone,
+          vendor: { name: order.restaurant.name, address: order.restaurant.address, phone: order.restaurant.phone },
+          customer: { name: order.customer.name, address: order.deliveryAddress, phone: order.customer.phone },
+        })),
+      };
+  }
 
-    if (!partner) throw new Error("User is not a Logistics Partner");
+  static async acceptOrder(userId: string, orderId: string) {
+      const partner = await prisma.logisticsPartner.findUnique({ where: { ownerId: userId } });
+      if (!partner) throw new Error("Unauthorized");
+      const order = await prisma.order.findUnique({ where: { id: orderId } });
+      if (!order) throw new Error("Order not found");
+      if (order.status !== "READY_FOR_PICKUP") throw new Error("Order is not ready for pickup yet.");
+      if (order.logisticsPartnerId && order.logisticsPartnerId !== partner.id) throw new Error("Order already taken by another partner");
+      const trackingId = order.trackingId || generateTrackingId();
+      return await prisma.order.update({ where: { id: orderId }, data: { logisticsPartnerId: partner.id, trackingId } });
+  }
 
-    // Fetch relevant orders
-    const allOrders = await prisma.order.findMany({
-      where: {
-        OR: [
-          // 1. Active Orders (Available or In Progress)
-          {
-            status: { in: ["READY_FOR_PICKUP", "OUT_FOR_DELIVERY"] },
-            OR: [
-              { logisticsPartnerId: partner.id },
-              { logisticsPartnerId: null },
-            ],
-          },
-          // 2. Delivered Orders (History - Only mine)
-          {
-            status: "DELIVERED",
-            logisticsPartnerId: partner.id,
-          },
-        ],
-      },
-      include: { restaurant: true, customer: true },
-      orderBy: { updatedAt: "desc" }, // Show newest activity first
-      take: 50, // Limit history to last 50 to keep it fast
-    });
-    // Calculate Pending Balance
-    const pendingOrders = allOrders.filter(
-      (o) => o.logisticsPartnerId === partner.id && o.status !== "DELIVERED"
-    );
-    const pendingBalance = pendingOrders.reduce(
-      (sum, order) => sum + (order.deliveryFee || 0),
-      0
-    );
-
-    const stats = {
-      totalJobs: await prisma.order.count({
-        where: { logisticsPartnerId: partner.id, status: "DELIVERED" },
-      }),
-      activeJobs: pendingOrders.length,
-    };
-
-    return {
-      partnerName: partner.name,
-      availableBalance: partner.walletBalance,
-      pendingBalance: pendingBalance,
-      stats,
-      activeOrders: allOrders.map((order) => ({
+  static async getRiderTask(trackingId: string) {
+      const order = await prisma.order.findUnique({ where: { trackingId }, include: { restaurant: true, customer: true, items: true } });
+      if (!order) throw new Error("Task not found or link expired");
+      return {
         id: order.id,
-        reference: order.reference, // 🚀 Added this for consistent ID
+        reference: order.reference,
         status: order.status,
         deliveryFee: order.deliveryFee,
-        trackingId:
-          order.logisticsPartnerId === partner.id ? order.trackingId : null,
-        postedAt: order.updatedAt, // Added for "Just Now" calculation
-
+        deliveryCode: order.deliveryCode,
+        trackingId: order.trackingId,
         riderName: order.riderName,
         riderPhone: order.riderPhone,
-
-        vendor: {
-          name: order.restaurant.name,
-          address: order.restaurant.address,
-          phone: order.restaurant.phone,
-        },
-        customer: {
-          name: order.customer.name,
-          address: order.deliveryAddress,
-          phone: order.customer.phone,
-        },
-      })),
-    };
+        deliveryAddress: order.deliveryAddress,
+        deliveryLatitude: order.deliveryLatitude,
+        deliveryLongitude: order.deliveryLongitude,
+        customer: { name: order.customer.name, phone: order.customer.phone },
+        vendor: { name: order.restaurant.name, address: order.restaurant.address, phone: order.restaurant.phone, latitude: order.restaurant.latitude, longitude: order.restaurant.longitude },
+        items: order.items,
+      };
   }
 
-  // ... (acceptOrder remains unchanged) ...
-  static async acceptOrder(userId: string, orderId: string) {
-    const partner = await prisma.logisticsPartner.findUnique({
-      where: { ownerId: userId },
-    });
-    if (!partner) throw new Error("Unauthorized");
-
-    const order = await prisma.order.findUnique({ where: { id: orderId } });
-    if (!order) throw new Error("Order not found");
-
-    if (order.status !== "READY_FOR_PICKUP") {
-      throw new Error("Order is not ready for pickup yet.");
-    }
-    if (order.logisticsPartnerId && order.logisticsPartnerId !== partner.id) {
-      throw new Error("Order already taken by another partner");
-    }
-
-    const trackingId = order.trackingId || generateTrackingId();
-
-    return await prisma.order.update({
-      where: { id: orderId },
-      data: { logisticsPartnerId: partner.id, trackingId },
-    });
+  static async assignLinkRider(trackingId: string, name: string, phone: string) {
+      const order = await prisma.order.findUnique({ where: { trackingId } });
+      if (!order) throw new Error("Order not found");
+      if (order.riderName) throw new Error(`This order has already been claimed by ${order.riderName}`);
+      await prisma.order.update({ where: { id: order.id }, data: { riderName: name, riderPhone: phone } });
+      const io = getSocketIO();
+      if (order.logisticsPartnerId) {
+        io.emit(`partner_${order.logisticsPartnerId}_update`, { type: "RIDER_ASSIGNED", orderId: order.id, riderName: name });
+      }
+      return { success: true };
   }
 
-  // =================================================================
-  // 3. GET TASK DETAILS (For Rider Link)
-  // =================================================================
-  static async getRiderTask(trackingId: string) {
-    const order = await prisma.order.findUnique({
-      where: { trackingId },
-      include: { restaurant: true, customer: true, items: true },
-    });
-
-    if (!order) throw new Error("Task not found or link expired");
-
-    return {
-      id: order.id,
-      reference: order.reference, // 🚀 Added for consistent ID
-      status: order.status,
-      deliveryFee: order.deliveryFee,
-      deliveryCode: order.deliveryCode,
-      trackingId: order.trackingId,
-
-      riderName: order.riderName,
-      riderPhone: order.riderPhone,
-
-      deliveryAddress: order.deliveryAddress,
-      deliveryLatitude: order.deliveryLatitude,
-      deliveryLongitude: order.deliveryLongitude,
-
-      customer: {
-        name: order.customer.name,
-        phone: order.customer.phone,
-      },
-      vendor: {
-        name: order.restaurant.name,
-        address: order.restaurant.address,
-        phone: order.restaurant.phone,
-        latitude: order.restaurant.latitude,
-        longitude: order.restaurant.longitude,
-      },
-      items: order.items,
-    };
-  }
-
-  // ... (assignLinkRider, pickupOrder, completeDelivery unchanged) ...
-  static async assignLinkRider(
-    trackingId: string,
-    name: string,
-    phone: string
-  ) {
-    const order = await prisma.order.findUnique({ where: { trackingId } });
-    if (!order) throw new Error("Order not found");
-
-    if (order.riderName) {
-      throw new Error(
-        `This order has already been claimed by ${order.riderName}`
-      );
-    }
-
-    await prisma.order.update({
-      where: { id: order.id },
-      data: {
-        riderName: name,
-        riderPhone: phone,
-      },
-    });
-
-    const io = getSocketIO();
-    if (order.logisticsPartnerId) {
-      io.emit(`partner_${order.logisticsPartnerId}_update`, {
-        type: "RIDER_ASSIGNED",
-        orderId: order.id,
-        riderName: name,
-      });
-    }
-
-    return { success: true };
-  }
-
+  // ✅ UPDATED: Sends Email with DB Reference
   static async pickupOrder(trackingId: string) {
-    const order = await prisma.order.findUnique({ where: { trackingId } });
+    const order = await prisma.order.findUnique({ 
+        where: { trackingId },
+        include: { customer: true } // ✅ Needed for email
+    });
     if (!order) throw new Error("Task not found");
 
     const updatedOrder = await prisma.order.update({
@@ -204,15 +115,11 @@ export class DispatchService {
       data: { status: "OUT_FOR_DELIVERY" },
     });
 
-    // 2. 💰 PAY VENDOR NOW (If Customer has Paid)
-    // Logic: Food has left the building, so Vendor has done their job.
     if (updatedOrder.paymentStatus === "PAID") {
         console.log(`📦 Order Picked Up. Distributing Vendor Earnings for #${order.reference}`);
         await OrderService.distributeVendorEarnings(order.id).catch(err => {
             console.error("❌ Failed to pay vendor on pickup:", err);
         });
-    } else {
-        console.log(`⚠️ Order Picked Up but NOT PAID. Vendor will be paid upon payment webhook.`);
     }
 
     const io = getSocketIO();
@@ -221,13 +128,27 @@ export class DispatchService {
       status: "OUT_FOR_DELIVERY",
     });
 
+    // ✅ SEND EMAIL (Fixed to use real reference)
+    if (order.customer?.email) {
+        sendOrderStatusEmail(
+            order.customer.email,
+            order.customer.name,
+            order.reference, // <--- THE FIX
+            "OUT_FOR_DELIVERY"
+        ).catch(console.error);
+    }
+
     return { success: true, status: updatedOrder.status };
   }
 
+  // ✅ UPDATED: Sends Email with DB Reference
   static async completeDelivery(trackingId: string, otp: string) {
     const order = await prisma.order.findUnique({
       where: { trackingId },
-      include: { logisticsPartner: true }, // Include partner to get ownerId
+      include: { 
+          logisticsPartner: true,
+          customer: true // ✅ Needed for email
+      }, 
     });
 
     if (!order) throw new Error("Order not found");
@@ -239,18 +160,16 @@ export class DispatchService {
       data: { status: "DELIVERED" },
     });
 
-    // 2. Credit Logistics Partner & Create Transaction Record
+    // 2. Credit Logistics Partner
     if (order.logisticsPartner) {
-      // A. Increment Balance
       await prisma.logisticsPartner.update({
         where: { id: order.logisticsPartner.id },
         data: { walletBalance: { increment: order.deliveryFee } },
       });
 
-      // B. Create Transaction Record for the Owner (so it shows in App Wallet)
       await prisma.transaction.create({
         data: {
-          userId: order.logisticsPartner.ownerId, // Link to the Partner's Admin/Owner
+          userId: order.logisticsPartner.ownerId,
           amount: order.deliveryFee,
           type: TransactionType.CREDIT,
           category: TransactionCategory.ORDER_EARNING,
@@ -269,96 +188,46 @@ export class DispatchService {
     const io = getSocketIO();
     io.to("dispatchers").emit("order_delivered", { orderId: order.id });
 
+    // ✅ SEND EMAIL (Fixed to use real reference)
+    if (order.customer?.email) {
+        sendOrderStatusEmail(
+            order.customer.email,
+            order.customer.name,
+            order.reference, // <--- THE FIX
+            "DELIVERED"
+        ).catch(console.error);
+    }
+
     return { success: true };
   }
 
-  // [UPDATED] Get Partner Wallet
+  // ... (getPartnerWallet, requestWithdrawal remain unchanged) ...
   static async getPartnerWallet(userId: string) {
-    // 1. Find the Logistics Partner owned by this user
-    const partner = await prisma.logisticsPartner.findUnique({
-      where: { ownerId: userId },
-    });
-
-    if (!partner) {
-      return { availableBalance: 0, pendingBalance: 0, transactions: [] };
-    }
-
-    // 2. Fetch Transactions
-    const transactions = await prisma.transaction.findMany({
-      where: { userId: userId },
-      orderBy: { createdAt: "desc" },
-      take: 50,
-    });
-
-    // 3. Calculate Pending Balance (Active Deliveries)
-    const activeOrders = await prisma.order.findMany({
-      where: {
-        logisticsPartnerId: partner.id,
-        status: { in: ["READY_FOR_PICKUP", "OUT_FOR_DELIVERY"] },
-      },
-      select: { deliveryFee: true },
-    });
-
-    const pendingBalance = activeOrders.reduce(
-      (sum, o) => sum + (o.deliveryFee || 0),
-      0
-    );
-
-    return {
-      availableBalance: partner.walletBalance, // Renamed from 'balance'
-      pendingBalance: pendingBalance, // Added this
-      transactions: transactions.map((t) => ({
-        id: t.id,
-        amount: t.amount,
-        type: t.type,
-        category: t.category,
-        reference: t.reference,
-        description: t.description,
-        status: t.status,
-        createdAt: t.createdAt,
-      })),
-    };
+      const partner = await prisma.logisticsPartner.findUnique({ where: { ownerId: userId } });
+      if (!partner) return { availableBalance: 0, pendingBalance: 0, transactions: [] };
+      const transactions = await prisma.transaction.findMany({ where: { userId: userId }, orderBy: { createdAt: "desc" }, take: 50 });
+      const activeOrders = await prisma.order.findMany({
+        where: { logisticsPartnerId: partner.id, status: { in: ["READY_FOR_PICKUP", "OUT_FOR_DELIVERY"] } },
+        select: { deliveryFee: true },
+      });
+      const pendingBalance = activeOrders.reduce((sum, o) => sum + (o.deliveryFee || 0), 0);
+      return {
+        availableBalance: partner.walletBalance,
+        pendingBalance: pendingBalance,
+        transactions: transactions.map((t) => ({ id: t.id, amount: t.amount, type: t.type, category: t.category, reference: t.reference, description: t.description, status: t.status, createdAt: t.createdAt })),
+      };
   }
 
-  // [UPDATED] Request Withdrawal
-  static async requestWithdrawal(
-    userId: string,
-    amount: number,
-    bankDetails: {
-      bankName: string;
-      accountNumber: string;
-      accountName: string;
-    }
-  ) {
-    const partner = await prisma.logisticsPartner.findUnique({
-      where: { ownerId: userId },
-    });
-
-    if (!partner) throw new Error("Logistics account not found");
-    if (partner.walletBalance < amount) throw new Error("Insufficient funds");
-
-    // Atomic Transaction
-    return await prisma.$transaction(async (tx) => {
-      // 1. Deduct Money
-      await tx.logisticsPartner.update({
-        where: { id: partner.id },
-        data: { walletBalance: { decrement: amount } },
+  static async requestWithdrawal(userId: string, amount: number, bankDetails: { bankName: string; accountNumber: string; accountName: string; }) {
+      const partner = await prisma.logisticsPartner.findUnique({ where: { ownerId: userId } });
+      if (!partner) throw new Error("Logistics account not found");
+      if (partner.walletBalance < amount) throw new Error("Insufficient funds");
+      return await prisma.$transaction(async (tx) => {
+        await tx.logisticsPartner.update({ where: { id: partner.id }, data: { walletBalance: { decrement: amount } } });
+        const transaction = await tx.transaction.create({
+          data: { userId, amount, type: TransactionType.DEBIT, category: TransactionCategory.WITHDRAWAL, status: TransactionStatus.PENDING, description: `Withdrawal to ${bankDetails.bankName} (${bankDetails.accountNumber})`, reference: `WD-${randomBytes(4).toString("hex").toUpperCase()}` },
+        });
+        return { success: true, transaction };
       });
-
-      // 2. Create Transaction Record
-      const transaction = await tx.transaction.create({
-        data: {
-          userId,
-          amount,
-          type: TransactionType.DEBIT,
-          category: TransactionCategory.WITHDRAWAL,
-          status: TransactionStatus.PENDING,
-          description: `Withdrawal to ${bankDetails.bankName} (${bankDetails.accountNumber})`,
-          reference: `WD-${randomBytes(4).toString("hex").toUpperCase()}`,
-        },
-      });
-
-      return { success: true, transaction };
-    });
   }
 }

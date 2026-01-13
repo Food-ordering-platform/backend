@@ -7,7 +7,7 @@ import {
 } from "../../generated/prisma";
 import { getSocketIO } from "../utils/socket";
 import { OrderService } from "../order/order.service";
-import { sendOrderStatusEmail } from "../utils/mailer"; // ✅ Import Mailer
+import { sendAdminPayoutAlert, sendOrderStatusEmail } from "../utils/mailer"; // ✅ Import Mailer
 
 const prisma = new PrismaClient();
 
@@ -217,16 +217,34 @@ export class DispatchService {
         transactions: transactions.map((t) => ({ id: t.id, amount: t.amount, type: t.type, category: t.category, reference: t.reference, description: t.description, status: t.status, createdAt: t.createdAt })),
       };
   }
-
-  static async requestWithdrawal(userId: string, amount: number, bankDetails: { bankName: string; accountNumber: string; accountName: string; }) {
+static async requestWithdrawal(userId: string, amount: number, bankDetails: any) {
       const partner = await prisma.logisticsPartner.findUnique({ where: { ownerId: userId } });
       if (!partner) throw new Error("Logistics account not found");
       if (partner.walletBalance < amount) throw new Error("Insufficient funds");
+      
       return await prisma.$transaction(async (tx) => {
-        await tx.logisticsPartner.update({ where: { id: partner.id }, data: { walletBalance: { decrement: amount } } });
-        const transaction = await tx.transaction.create({
-          data: { userId, amount, type: TransactionType.DEBIT, category: TransactionCategory.WITHDRAWAL, status: TransactionStatus.PENDING, description: `Withdrawal to ${bankDetails.bankName} (${bankDetails.accountNumber})`, reference: `WD-${randomBytes(4).toString("hex").toUpperCase()}` },
+        // 1. Debit Wallet
+        await tx.logisticsPartner.update({ 
+            where: { id: partner.id }, 
+            data: { walletBalance: { decrement: amount } } 
         });
+        
+        // 2. Create Transaction Record
+        const transaction = await tx.transaction.create({
+          data: { 
+              userId, 
+              amount, 
+              type: TransactionType.DEBIT, 
+              category: TransactionCategory.WITHDRAWAL, 
+              status: TransactionStatus.PENDING, 
+              description: `Withdrawal to ${bankDetails.bankName} (${bankDetails.accountNumber})`, 
+              reference: `WD-${randomBytes(4).toString("hex").toUpperCase()}` 
+          },
+        });
+
+        // 3. 🔔 Notify Admin (New Line)
+        sendAdminPayoutAlert(partner.name, amount, bankDetails);
+
         return { success: true, transaction };
       });
   }

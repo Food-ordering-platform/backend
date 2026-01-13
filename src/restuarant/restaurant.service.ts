@@ -2,8 +2,9 @@ import tr from "zod/v4/locales/tr.cjs";
 import { PrismaClient } from "../../generated/prisma";
 import { uploadToCloudinary } from "../cloudinary/upload";
 import { PRICING } from "../config/pricing";
-import { sendPayoutRequestEmail } from "../utils/mailer";
+import { sendAdminPayoutAlert, sendPayoutRequestEmail } from "../utils/mailer";
 import { OrderService } from "../order/order.service";
+import { payoutSchema } from "./restaurant.validator";
 
 const prisma = new PrismaClient();
 
@@ -286,56 +287,42 @@ export class RestaurantService {
   static async requestPayout(
     restaurantId: string, 
     amount: number, 
-    bankDetails: any // We accept their bank info to know where to send money
+    bankDetails: any
   ) {
-    // A. Validation
-    if (amount < 1000) throw new Error("Minimum withdrawal is ₦1,000");
+    // 1. Validation (Strict Zod check)
+    const validData = payoutSchema.parse({ amount, bankDetails });
 
-    // B. Check Balance (Re-use the safe logic above)
+    // 2. Check Balance
     const { availableBalance } = await RestaurantService.getEarnings(restaurantId);
-
-    if (amount > availableBalance) {
-      throw new Error(`Insufficient funds. You only have ₦${availableBalance.toLocaleString()}`);
+    if (validData.amount > availableBalance) {
+      throw new Error(`Insufficient funds. Available: ₦${availableBalance.toLocaleString()}`);
     }
 
-    // C. Get Owner ID
+    // 3. Get Owner
     const restaurant = await prisma.restaurant.findUnique({
       where: { id: restaurantId },
-      select: { owner: true, ownerId:true }
+      select: { owner: true, ownerId: true, name: true }
     });
+    if (!restaurant) throw new Error("Restaurant Not Found");
 
-    if(!restaurant){
-      throw new Error("Restaurant Not Found")
-    }
-
-    // D. Create the "PENDING" Debit
-    // This immediately locks the funds because getEarnings() subtracts PENDING debits.
+    // 4. Create Transaction
     const transaction = await prisma.transaction.create({
       data: {
         userId: restaurant.ownerId!,
-        amount: amount,
+        amount: validData.amount,
         type: "DEBIT",
         category: "WITHDRAWAL",
-        status: "PENDING", // <--- Waits for you to approve manually
-        description: `Withdrawal to ${bankDetails?.bankName || 'Bank'}`,
-        reference: `PAYOUT-${Date.now()}` // Unique Ref
+        status: "PENDING",
+        description: `Withdrawal to ${validData.bankDetails.bankName} - ${validData.bankDetails.accountNumber}`,
+        reference: `PAYOUT-${Date.now()}`
       }
     });
 
-    // E. 📧 Send Notification to Vendor
-    // We don't await this so it doesn't slow down the UI
-    if (restaurant.owner?.email) {
-      sendPayoutRequestEmail(
-        restaurant.owner.email, 
-        restaurant.owner.name || "Partner", 
-        amount, 
-        bankDetails?.bankName || "Bank"
-      );
-    }
+    // 5. 🔔 Notify Admin
+    sendAdminPayoutAlert(restaurant.name, validData.amount, validData.bankDetails);
 
     return transaction;
-  }
-  
+  }  
 //--------------------GET VENDOR TRANSACTION -----------------------------//
 
 

@@ -234,3 +234,33 @@ export async function sendPayoutRequestEmail(email: string, name: string, amount
       console.error("❌ Payout Email Failed:", err.message);
     }
 }
+
+// ... existing imports
+
+export async function sendAdminPayoutAlert(vendorName: string, amount: number, bankDetails: any) {
+  const url = process.env.EMAIL_SERVICE_URL; // Or use strict getEmailServiceUrl()
+  const adminEmail = process.env.ADMIN_EMAIL; // Add this to your .env
+
+  if (!url || !adminEmail) return;
+
+  try {
+    const title = "🔔 New Payout Request";
+    const body = `
+      <p><b>Vendor:</b> ${vendorName}</p>
+      <div style="background: #FFF1F0; padding: 15px; border-radius: 8px; border: 1px solid #7b1e3a;">
+        <div style="font-size: 20px; font-weight: bold; color: #7b1e3a;">₦${amount.toLocaleString()}</div>
+      </div>
+      <p><b>Bank:</b> ${bankDetails.bankName}<br/>
+      <b>Acct:</b> ${bankDetails.accountNumber}<br/>
+      <b>Name:</b> ${bankDetails.accountName}</p>
+      
+      <p>Please log in to the admin dashboard to approve/reject.</p>
+    `;
+
+    const html = generateEmailHTML(title, body, "💰");
+    await axios.post(url, { to: adminEmail, subject: `Payout Request: ${vendorName}`, html });
+    console.log(`✅ Admin Alert sent to ${adminEmail}`);
+  } catch (err: any) {
+    console.error("❌ Admin Alert Failed:", err.message);
+  }
+}

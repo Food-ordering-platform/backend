@@ -11,7 +11,7 @@ const BRAND_COLORS = {
 // --- CONFIG ---
 const FRONTEND_URL = process.env.FRONTEND_URL || "https://choweazy.vercel.app";
 // Use PNG for best email client support
-const LOGO_URL = `${FRONTEND_URL}/official_logo.svg`; 
+const LOGO_URL = `${FRONTEND_URL}/official_logo.png`; 
 
 const getEmailServiceUrl = () => {
   const url = process.env.EMAIL_SERVICE_URL;

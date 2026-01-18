@@ -12,9 +12,6 @@ const prisma = new PrismaClient();
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID)
 
 export class AuthService {
-  static subscribeWebPush(userId: string, subscription: any) {
-    throw new Error("Method not implemented.");
-  }
   // ------------------ REGISTER ------------------
  static async registerUser(
     name: string,
@@ -381,7 +378,7 @@ export class AuthService {
     });
   }
 
-  public async subscribeWebPush(userId: string, subscription: any) {
+  static async subscribeWebPush(userId: string, subscription: any) {
     if (!subscription || !subscription.endpoint || !subscription.keys) {
       throw new Error("Invalid subscription data");
     }

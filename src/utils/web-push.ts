@@ -24,7 +24,7 @@ export const sendWebPushNotification = async (userId: string, payload: any) => {
     });
 
     // 2. Send to all devices
-    const promises = subscriptions.map(sub => {
+    const promises = subscriptions.map((sub: { endpoint: any; p256dh: any; auth: any; id: any; }) => {
       const pushSubscription = {
         endpoint: sub.endpoint,
         keys: {

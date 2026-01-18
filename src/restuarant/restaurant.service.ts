@@ -346,4 +346,47 @@ export class RestaurantService {
     })
     return transaction
   }
+
+  // Add to RestaurantService class
+
+static async addReview(userId: string, orderId: string, rating: number, comment: string) {
+  // 1. Get order to find restaurant
+  const order = await prisma.order.findUnique({
+    where: { id: orderId },
+    include: { restaurant: true }
+  });
+
+  if (!order) throw new Error("Order not found");
+  if (order.customerId !== userId) throw new Error("You can only rate your own orders");
+  if (order.status !== "DELIVERED") throw new Error("Cannot rate undelivered order");
+
+  // 2. Create Review
+  const review = await prisma.review.create({
+    data: {
+      userId,
+      restaurantId: order.restaurantId,
+      orderId,
+      rating,
+      comment
+    }
+  });
+
+  // 3. Update Restaurant Average Rating
+  const restaurantId = order.restaurantId;
+  const aggregates = await prisma.review.aggregate({
+    where: { restaurantId },
+    _avg: { rating: true },
+    _count: { rating: true }
+  });
+
+  await prisma.restaurant.update({
+    where: { id: restaurantId },
+    data: {
+      rating: aggregates._avg.rating || 0,
+      ratingCount: aggregates._count.rating || 0
+    }
+  });
+
+  return review;
+}
 }

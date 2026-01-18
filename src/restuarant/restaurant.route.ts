@@ -40,4 +40,6 @@ router.get("/:id/transactions", authMiddleware, RestaurantController.getTransact
 // [FIXED] Route name changed to match frontend service call (/payout)
 router.post("/:id/payout", authMiddleware, RestaurantController.requestPayout);
 
+
+
 export default router;

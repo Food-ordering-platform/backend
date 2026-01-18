@@ -25,4 +25,7 @@ router.get("/restaurant/:restaurantId", authMiddleware, OrderController.getVendo
 // 6. Update Status (CRITICAL SECURITY - Only Riders/Vendors)
 router.patch("/:id/status", authMiddleware, OrderController.updateOrderStatus);
 
+//7
+router.post("/:id/rate", authMiddleware, OrderController.rateOrder);
+
 export default router;

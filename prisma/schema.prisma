@@ -47,6 +47,8 @@ model User {
   termsAcceptedAt DateTime?
 
   webPushSubscriptions WebPushSubscription[]
+
+  reviews              Review[]
 }
 
 model Otp {
@@ -100,6 +102,11 @@ model Restaurant {
 
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
+
+  // 🟢 ADD THIS RELATION
+  reviews      Review[]
+  rating       Float     @default(0.0) // Average rating
+  ratingCount  Int       @default(0)
 }
 
 model MenuCategory {
@@ -305,4 +312,21 @@ model WebPushSubscription {
   createdAt DateTime @default(now())
 
   @@index([userId])
+}
+
+// 🟢 ADD THIS NEW MODEL (For Ratings)
+model Review {
+  id           String     @id @default(uuid())
+  rating       Int        // 1-5 Stars
+  comment      String?
+  
+  userId       String
+  user         User       @relation(fields: [userId], references: [id])
+  
+  restaurantId String
+  restaurant   Restaurant @relation(fields: [restaurantId], references: [id])
+  
+  orderId      String     @unique // One review per order
+  
+  createdAt    DateTime   @default(now())
 }

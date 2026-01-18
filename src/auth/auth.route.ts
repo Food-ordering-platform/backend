@@ -34,4 +34,7 @@ router.post("/reset-password", AuthController.resetPassword);
 //Push Notificatioin
 router.post("/push-token", AuthController.updatePushToken); 
 
+//web push notification
+router.post("/web-push/subscribe", authMiddleware, AuthController.subscribeWebPush)
+
 export default router;

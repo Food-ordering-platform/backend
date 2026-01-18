@@ -1,6 +1,6 @@
 // food-ordering-platform/backend/backend-main/src/auth/auth.controller.ts
 
-import { Request, Response } from "express";
+import { Request, Response, NextFunction } from "express";
 import { AuthService } from "./auth.service";
 import { registerSchema, loginSchema } from "./auth.validator";
 
@@ -150,6 +150,7 @@ export class AuthController {
         return res.status(200).json({ message: "Password reset successful", result });
       } catch (err: any) { return res.status(400).json({ error: err.message }); }
   }
+
   static async updatePushToken(req: Request, res: Response) {
     try {
       const { token } = req.body;
@@ -158,4 +159,22 @@ export class AuthController {
       return res.json({ success: true });
     } catch (err: any) { return res.status(500).json({ error: "Failed to update token" }); }
   }
+
+  //WEB PUSH  NOTIFICATION
+  static subscribeWebPush = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { subscription } = req.body;
+      const userId = req.user?.id; 
+
+      if (!userId) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+
+      await AuthService.subscribeWebPush(userId, subscription);
+
+      res.status(200).json({ message: "Web push subscribed successfully" });
+    } catch (error) {
+      next(error);
+    }
+  };
 }

@@ -282,7 +282,7 @@ export class RestaurantController {
       const {amount, bankDetails} = req.body
 
       if(!amount){
-        return res.status(400).json({success:true, message:"Amount is required"})
+        return res.status(400).json({success:true, message:"Amount is requiredd"})
       }
       if(!bankDetails){
         return res.status(400).json({success:false, message:"Invalid Bank Details"})

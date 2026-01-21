@@ -6,6 +6,7 @@ import { sendPushNotification } from "../utils/notification";
 import { getSocketIO } from "../utils/socket";
 import { calculateDistance, calculateDeliveryFee } from "../utils/haversine";
 import { PRICING } from "../config/pricing";
+import { sendWebPushNotification } from "../utils/web-push";
 
 const prisma = new PrismaClient();
 
@@ -330,6 +331,7 @@ export class OrderService {
       where: { id: orderId },
       include: { restaurant: true },
     });
+
     if (!order) throw new Error("Order not found");
 
     let newPaymentStatus = order.paymentStatus;
@@ -360,26 +362,45 @@ export class OrderService {
             sendPushNotification(updatedOrder.customer.pushToken, "Order Accepted!", "The vendor is preparing your food.");
         }
         
-        // ✅ NEW: Send Delivery Code HERE (When Vendor Accepts)
         if (updatedOrder.customer?.email && updatedOrder.deliveryCode) {
             sendDeliveryCode(
                 updatedOrder.customer.email,
                 updatedOrder.deliveryCode,
-                updatedOrder.reference // <--- THE FIX: Use real reference
+                updatedOrder.reference 
             ).catch(err => console.error("Failed to send delivery code:", err));
         }
     }
 
+    // 🟢 UPDATED: Notify ALL Logistics Partners
     if (status === "READY_FOR_PICKUP") {
       try {
-        const defaultPartner = await prisma.logisticsPartner.findFirst();
-        if (defaultPartner) {
-          await prisma.order.update({
-            where: { id: orderId },
-            data: { logisticsPartnerId: defaultPartner.id },
-          });
-        }
+        // 1. Fetch ALL Logistics Partners (with their Owner details for the User ID)
+        const allPartners = await prisma.logisticsPartner.findMany({
+            include: { owner: true }
+        });
 
+        console.log(`🔔 Broadcasting 'Ready for Pickup' to ${allPartners.length} Dispatchers`);
+
+        // 2. Send Push Notification to EACH Partner's Owner
+        const pushPromises = allPartners.map(partner => {
+            if (partner.owner?.id) {
+                return sendWebPushNotification(partner.owner.id, {
+                    title: "New Job Alert! 🚨",
+                    body: `Order #${order.reference} is ready at ${order.restaurant.name}`,
+                    url: `/dashboard/orders`, // Opens the dispatch dashboard
+                    data: {
+                        orderId: order.id,
+                        status: 'READY_FOR_PICKUP',
+                        trackingId: order.trackingId,
+                        type: 'DISPATCH_BROADCAST'
+                    }
+                }).catch(err => console.error(`Failed to push to ${partner.name}:`, err));
+            }
+        });
+
+        await Promise.all(pushPromises);
+
+        // 3. Socket Emit (This naturally goes to all dispatchers listening)
         const io = getSocketIO();
         io.to("dispatchers").emit("new_dispatcher_request", {
           orderId: order.id,
@@ -392,19 +413,19 @@ export class OrderService {
           pickupTime: new Date().toISOString(),
         });
         
-        console.log(`🚚 Rider Requested for Order #${order.reference}`);
+        console.log(`🚚 Riders Requested for Order #${order.reference}`);
 
       } catch (error) {
-        console.error("Auto-assign error:", error);
+        console.error("Broadcast error:", error);
       }
     }
 
-    // Standard Status Email (PENDING, PREPARING, CANCELLED, etc.)
+    // Standard Status Email
     if (updatedOrder.customer?.email) {
       sendOrderStatusEmail(
         updatedOrder.customer.email,
         updatedOrder.customer.name,
-        updatedOrder.reference, // <--- THE FIX: Use real reference
+        updatedOrder.reference, 
         status
       );
     }

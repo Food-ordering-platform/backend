@@ -1,6 +1,6 @@
 import { Request, Response } from "express";
 import { PaymentService } from "./payment.service";
-import { PrismaClient } from "../../generated/prisma";
+import { PrismaClient } from "@prisma/client";
 import crypto from "crypto";
 import { OrderService } from "../order/order.service";
 

@@ -1,4 +1,4 @@
-import { OrderStatus } from "../../generated/prisma";
+import { OrderStatus } from "@prisma/client";
 
 /**
  * Deterministic Finite Automata (DFA) for Order Lifecycle

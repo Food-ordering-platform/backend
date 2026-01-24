@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
-import { PrismaClient } from "../../generated/prisma"; // Adjust path to your generated client
+import { PrismaClient } from "@prisma/client"; // Adjust path to your generated client
 
 const prisma = new PrismaClient();
 

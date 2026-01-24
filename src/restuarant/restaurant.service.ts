@@ -359,6 +359,14 @@ static async addReview(userId: string, orderId: string, rating: number, comment:
   if (!order) throw new Error("Order not found");
   if (order.customerId !== userId) throw new Error("You can only rate your own orders");
   if (order.status !== "DELIVERED") throw new Error("Cannot rate undelivered order");
+  
+  const existingReview = await prisma.review.findUnique({
+    where: { orderId }
+  });
+
+  if(existingReview) {
+    throw new Error("You have already rated this order")
+  }
 
   // 2. Create Review
   const review = await prisma.review.create({

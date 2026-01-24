@@ -24,12 +24,13 @@ export class PaymentService {
           // Convert Naira to Kobo (Paystack requirement)
           amount: Math.round(amount * 100), 
           reference,
+          name,
           // Where Paystack redirects the user AFTER payment (Frontend)
           callback_url: `https://choweazy.vercel.app/orders/details`, 
           metadata: {
             custom_fields: [
               {
-                display_name: "Customer Name",
+                display_name: name,
                 variable_name: "customer_name",
                 value: name,
               },

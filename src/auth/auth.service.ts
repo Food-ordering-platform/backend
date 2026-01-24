@@ -1,6 +1,6 @@
 // food-ordering-platform/backend/backend-main/src/auth/auth.service.ts
 
-import { PrismaClient } from "../../generated/prisma";
+import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import {OAuth2Client} from "google-auth-library"
 import { randomInt } from "crypto";

@@ -1,4 +1,4 @@
-import { OrderStatus, PrismaClient } from "../../generated/prisma";
+import { OrderStatus, PrismaClient } from "@prisma/client";
 import { PaymentService } from "../payment/payment.service";
 import { randomBytes } from "crypto";
 import { sendDeliveryCode, sendOrderStatusEmail } from "../utils/mailer";

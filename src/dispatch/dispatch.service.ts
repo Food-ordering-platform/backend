@@ -4,7 +4,7 @@ import {
   TransactionType,
   TransactionCategory,
   TransactionStatus,
-} from "../../generated/prisma";
+} from "@prisma/client";
 import { getSocketIO } from "../utils/socket";
 import { OrderService } from "../order/order.service";
 import { sendAdminPayoutAlert, sendOrderStatusEmail } from "../utils/mailer"; // ✅ Import Mailer

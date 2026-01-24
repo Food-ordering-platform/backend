@@ -1,5 +1,5 @@
 import tr from "zod/v4/locales/tr.cjs";
-import { PrismaClient } from "../../generated/prisma";
+import { PrismaClient } from "@prisma/client";
 import { uploadToCloudinary } from "../cloudinary/upload";
 import { PRICING } from "../config/pricing";
 import { sendAdminPayoutAlert, sendPayoutRequestEmail } from "../utils/mailer";

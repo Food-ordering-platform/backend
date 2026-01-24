@@ -42,14 +42,14 @@ app.use(
 app.use(morgan("dev"));
 
 // 3. JSON Parsing (Skip for Webhooks)
-app.use((req, res, next) => {
-  if (req.path.startsWith("/api/payment/webhook")) {
-    next();
-  } else {
-    express.json()(req, res, next);
+app.use(express.json({
+  verify: (req: any, res, buf) => {
+    // This captures the raw buffer specifically for the webhook signature verification
+    if (req.url.startsWith('/api/payment/webhook')) {
+      req.rawBody = buf;
+    }
   }
-});
-
+}));
 app.use(express.urlencoded({ extended: true }));
 
 

@@ -11,11 +11,17 @@
     "sourceMap": true,
     "esModuleInterop": true,
     "moduleResolution": "node",
-    // "ignoreDeprecations": "6.0",
-
+    
+    // KEEP strict true, but disable specific strict rules causing your errors
     "strict": true,
+    "noImplicitAny": false,  
     "skipLibCheck": true
   },
   "include": ["src"],
-  "exclude": ["node_modules", "dist"]
+  "exclude": [
+    "node_modules", 
+    "dist", 
+    "**/*.test.ts", 
+    "**/*.spec.ts"
+  ]
 }

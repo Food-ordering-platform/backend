@@ -2,8 +2,45 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.RestaurantService = void 0;
 const prisma_1 = require("../../generated/prisma");
+const upload_1 = require("../cloudinary/upload");
+const mailer_1 = require("../utils/mailer");
+const order_service_1 = require("../order/order.service");
+const restaurant_validator_1 = require("./restaurant.validator");
 const prisma = new prisma_1.PrismaClient();
 class RestaurantService {
+    // Create Restaurant
+    // Create Restaurant with File Handling
+    static async createRestaurant(ownerId, data, file) {
+        // 1. Check existence
+        const existing = await prisma.restaurant.findUnique({ where: { ownerId } });
+        if (existing) {
+            throw new Error("You already have a restaurant");
+        }
+        // 2. Handle File Upload 
+        let imageUrl = undefined;
+        if (file) {
+            // Use your Cloudinary helper here.
+            // This ensures we get a secure URL back before saving to DB.
+            const uploadResult = await (0, upload_1.uploadToCloudinary)(file);
+            imageUrl = uploadResult.secure_url || uploadResult.url;
+        }
+        // 3. Create in DB
+        return await prisma.restaurant.create({
+            data: {
+                ownerId,
+                name: data.name,
+                address: data.address,
+                phone: data.phone,
+                email: data.email,
+                imageUrl: imageUrl, // Save the URL
+                prepTime: data.prepTime || 20,
+                minimumOrder: data.minimumOrder ?? 0.0,
+                isOpen: data.isOpen ?? true,
+                latitude: data.latitude,
+                longitude: data.longitude
+            },
+        });
+    }
     // Get all restaurants
     static async getAllRestaurant() {
         return await prisma.restaurant.findMany({
@@ -13,8 +50,7 @@ class RestaurantService {
                 address: true,
                 phone: true,
                 imageUrl: true,
-                deliveryTime: true,
-                deliveryFee: true,
+                prepTime: true,
                 minimumOrder: true,
                 isOpen: true,
             },
@@ -30,26 +66,40 @@ class RestaurantService {
                         menuItems: true, // nested items
                     },
                 },
-                orders: {
-                    select: {
-                        id: true,
-                        customerId: true,
-                        totalAmount: true,
-                        paymentStatus: true,
-                        status: true,
-                        deliveryAddress: true,
-                        createdAt: true,
-                        updatedAt: true,
-                    },
-                },
+                // orders: {
+                //   select: {
+                //     id: true,
+                //     customerId: true,
+                //     totalAmount: true,
+                //     paymentStatus: true,
+                //     status: true,
+                //     deliveryAddress: true,
+                //     createdAt: true,
+                //     updatedAt: true,
+                //   },
+                // },
             },
         });
     }
     // Update restaurant info
-    static async updateRestaurant(id, data) {
+    // Update restaurant info
+    static async updateRestaurant(id, data, file) {
+        // 1. Handle File Upload if provided
+        let imageUrl = undefined;
+        if (file) {
+            // ✅ Upload to Cloudinary
+            const uploadResult = await (0, upload_1.uploadToCloudinary)(file);
+            imageUrl = uploadResult.secure_url || uploadResult.url;
+        }
+        // 2. Prepare Update Data
+        const updateData = Object.fromEntries(Object.entries(data).filter(([_, value]) => value !== undefined));
+        // Only update the image URL if a new one was uploaded
+        if (imageUrl) {
+            updateData.imageUrl = imageUrl;
+        }
         return await prisma.restaurant.update({
             where: { id },
-            data,
+            data: updateData,
         });
     }
     // ===== Menu Items =====
@@ -57,17 +107,63 @@ class RestaurantService {
     static async getMenuItems(restaurantId) {
         return await prisma.menuItem.findMany({
             where: { restaurantId },
+            include: { category: true },
         });
     }
     // Add a new menu item
-    static async addMenuItem(restaurantId, data) {
-        const restaurant = await prisma.restaurant.findUnique({ where: { id: restaurantId } });
+    // [FIX] Added 'file' parameter
+    static async addMenuItem(restaurantId, data, file) {
+        // 1. Verify restaurant exists
+        const restaurant = await prisma.restaurant.findUnique({
+            where: { id: restaurantId },
+        });
         if (!restaurant)
             throw new Error("Restaurant not found");
+        // 2. Handle File Upload (Ticketer Strategy)
+        let imageUrl = data.imageUrl; // Keep existing if passed, though unlikely
+        if (file) {
+            const uploadResult = await (0, upload_1.uploadToCloudinary)(file);
+            imageUrl = uploadResult.secure_url || uploadResult.url;
+        }
+        let categoryId = data.categoryId;
+        // 3. Find or Create Category
+        if (data.categoryName) {
+            const cleanName = data.categoryName.trim();
+            const existingCategory = await prisma.menuCategory.findFirst({
+                where: {
+                    restaurantId,
+                    name: {
+                        equals: cleanName,
+                        mode: "insensitive",
+                    },
+                },
+            });
+            if (existingCategory) {
+                categoryId = existingCategory.id;
+            }
+            else {
+                const newCategory = await prisma.menuCategory.create({
+                    data: {
+                        name: cleanName,
+                        restaurantId,
+                    },
+                });
+                categoryId = newCategory.id;
+            }
+        }
+        if (!categoryId) {
+            throw new Error("Category is required");
+        }
+        // 4. Create Menu Item
         return await prisma.menuItem.create({
             data: {
-                ...data,
+                name: data.name,
+                description: data.description,
+                price: data.price,
+                imageUrl: imageUrl, // Uses the Cloudinary URL
+                available: true,
                 restaurantId,
+                categoryId,
             },
         });
     }
@@ -93,6 +189,150 @@ class RestaurantService {
             where: { id },
             data: { available: !item.available },
         });
+    }
+    //---------------GET EARNING FOR VENDOR -------------------//
+    // Add this method to RestaurantService
+    static async getEarnings(restaurantId) {
+        // 1. Get the Owner (To find their Wallet)
+        const restaurant = await prisma.restaurant.findUnique({
+            where: { id: restaurantId },
+            select: { ownerId: true }
+        });
+        if (!restaurant)
+            throw new Error("Restaurant not found");
+        // ============================================================
+        // A. AVAILABLE BALANCE (From Transaction Table)
+        // ============================================================
+        // Sum of all Credits (Earnings) minus Debits (Withdrawals)
+        const walletStats = await prisma.transaction.groupBy({
+            by: ['type'],
+            where: {
+                userId: restaurant.ownerId,
+                status: { in: ['SUCCESS', 'PENDING'] } // Count PENDING withdrawals so they can't overdraw
+            },
+            _sum: { amount: true }
+        });
+        let totalCredit = 0;
+        let totalDebit = 0;
+        walletStats.forEach(stat => {
+            if (stat.type === 'CREDIT')
+                totalCredit = stat._sum.amount || 0;
+            if (stat.type === 'DEBIT')
+                totalDebit = stat._sum.amount || 0;
+        });
+        const availableBalance = totalCredit - totalDebit;
+        // ============================================================
+        // B. PENDING BALANCE (From Orders Table)
+        // ============================================================
+        // Money currently "stuck" in active orders (Paid but not Delivered)
+        const pendingOrders = await prisma.order.findMany({
+            where: {
+                restaurantId,
+                paymentStatus: "PAID",
+                status: { in: ["PREPARING", "READY_FOR_PICKUP"] } // Cooking, Ready, or Out for Delivery
+            },
+            select: { totalAmount: true, deliveryFee: true }
+        });
+        // Use the shared helper to calculate pending money accurately
+        const pendingBalance = pendingOrders.reduce((sum, order) => {
+            return sum + order_service_1.OrderService.calculateVendorShare(order.totalAmount, order.deliveryFee);
+        }, 0);
+        return {
+            availableBalance: availableBalance, // Real Money
+            pendingBalance: pendingBalance, // Future Money
+            currency: "NGN",
+        };
+    }
+    //-------------------------REQUEST VENDOR PAYOUT ------------------------------//
+    // 2. REQUEST PAYOUT (MANUAL)
+    static async requestPayout(restaurantId, amount, bankDetails) {
+        // 1. Validation (Strict Zod check)
+        const validData = restaurant_validator_1.payoutSchema.parse({ amount, bankDetails });
+        // 2. Check Balance
+        const { availableBalance } = await RestaurantService.getEarnings(restaurantId);
+        if (validData.amount > availableBalance) {
+            throw new Error(`Insufficient funds. Available: ₦${availableBalance.toLocaleString()}`);
+        }
+        // 3. Get Owner
+        const restaurant = await prisma.restaurant.findUnique({
+            where: { id: restaurantId },
+            select: { owner: true, ownerId: true, name: true }
+        });
+        if (!restaurant)
+            throw new Error("Restaurant Not Found");
+        // 4. Create Transaction
+        const transaction = await prisma.transaction.create({
+            data: {
+                userId: restaurant.ownerId,
+                amount: validData.amount,
+                type: "DEBIT",
+                category: "WITHDRAWAL",
+                status: "PENDING",
+                description: `Withdrawal to ${validData.bankDetails.bankName} - ${validData.bankDetails.accountNumber}`,
+                reference: `PAYOUT-${Date.now()}`
+            }
+        });
+        // 5. 🔔 Notify Admin
+        (0, mailer_1.sendAdminPayoutAlert)(restaurant.name, validData.amount, validData.bankDetails);
+        return transaction;
+    }
+    //--------------------GET VENDOR TRANSACTION -----------------------------//
+    static async getTransactions(restaurantId) {
+        //1. Find owner of the restaurant
+        const restaurant = await prisma.restaurant.findUnique({
+            where: { id: restaurantId },
+            select: { ownerId: true }
+        });
+        if (!restaurant) {
+            throw new Error("Restaurant not found");
+        }
+        //2.Fetch Transaction for this owner
+        //We order by createdAt desc so the the next money shows up
+        const transaction = await prisma.transaction.findMany({
+            where: { userId: restaurant.ownerId },
+            orderBy: { createdAt: 'desc' },
+            take: 50 //Limit to the last 50 for performance
+        });
+        return transaction;
+    }
+    // Add to RestaurantService class
+    static async addReview(userId, orderId, rating, comment) {
+        // 1. Get order to find restaurant
+        const order = await prisma.order.findUnique({
+            where: { id: orderId },
+            include: { restaurant: true }
+        });
+        if (!order)
+            throw new Error("Order not found");
+        if (order.customerId !== userId)
+            throw new Error("You can only rate your own orders");
+        if (order.status !== "DELIVERED")
+            throw new Error("Cannot rate undelivered order");
+        // 2. Create Review
+        const review = await prisma.review.create({
+            data: {
+                userId,
+                restaurantId: order.restaurantId,
+                orderId,
+                rating,
+                comment
+            }
+        });
+        // 3. Update Restaurant Average Rating
+        const restaurantId = order.restaurantId;
+        const aggregates = await prisma.review.aggregate({
+            where: { restaurantId },
+            _avg: { rating: true },
+            _count: { rating: true }
+        });
+        await prisma.restaurant.update({
+            where: { id: restaurantId },
+            data: {
+                rating: aggregates._avg.rating || 0,
+                ratingCount: aggregates._count.rating || 0
+            }
+        });
+        return review;
     }
 }
 exports.RestaurantService = RestaurantService;

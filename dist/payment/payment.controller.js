@@ -7,113 +7,84 @@ exports.PaymentController = void 0;
 const payment_service_1 = require("./payment.service");
 const prisma_1 = require("../../generated/prisma");
 const crypto_1 = __importDefault(require("crypto"));
+const order_service_1 = require("../order/order.service");
 const prisma = new prisma_1.PrismaClient();
 class PaymentController {
-    // Initialize payment (unchanged)
-    static async initialize(req, res) {
-        try {
-            const { amount, email, name, customerId, restaurantId, items, deliveryAddress } = req.body;
-            // Generate a random token for this order
-            const token = crypto_1.default.randomBytes(16).toString("hex");
-            const order = await prisma.order.create({
-                data: {
-                    customerId,
-                    restaurantId,
-                    totalAmount: amount,
-                    paymentStatus: "PENDING",
-                    status: "PENDING",
-                    deliveryAddress,
-                    token, // ✅ include the generated token
-                    items: { create: items },
-                },
-                include: { items: true },
-            });
-            const checkoutUrl = await payment_service_1.PaymentService.initiatePayment(amount, name, email, order.reference);
-            return res.json({ checkoutUrl, reference: order.reference, orderId: order.id });
-        }
-        catch (err) {
-            console.error(err);
-            return res.status(500).json({ error: err.message });
-        }
-    }
-    // Verify payment (unchanged)
+    // =================================================================
+    // 1. Verify Payment (Called by Frontend after redirect)
+    // =================================================================
     static async verify(req, res) {
         try {
             const { reference } = req.params;
-            const charge = await payment_service_1.PaymentService.verifyPayment(reference);
+            // 1. Check if order exists locally
             const order = await prisma.order.findUnique({ where: { reference } });
             if (!order)
                 return res.status(404).json({ error: "Order not found" });
-            const paymentStatus = charge.status === "success"
-                ? "PAID"
-                : charge.status === "failed"
-                    ? "FAILED"
-                    : "PENDING";
-            await prisma.order.update({
-                where: { reference },
-                data: { paymentStatus },
-            });
-            return res.json({ success: paymentStatus === "PAID", charge });
+            // 2. Verify with Korapay (Server-to-Server check)
+            const charge = await payment_service_1.PaymentService.verifyPayment(reference);
+            // 3. Handle Logic
+            // ✅ FIX: If successful, let OrderService handle EVERYTHING (DB update + emails).
+            // We do NOT update the DB here for success, or we trigger the race condition.
+            if (charge.status === "success") {
+                await order_service_1.OrderService.processSuccessfulPayment(reference);
+            }
+            else {
+                // If failed/pending, we handle it manually because the Service only handles success.
+                const status = charge.status === "failed" ? "FAILED" : "PENDING";
+                await prisma.order.update({
+                    where: { reference },
+                    data: { paymentStatus: status },
+                });
+            }
+            // 4. Return status to Frontend
+            return res.json({ success: charge.status === "success", charge });
         }
         catch (err) {
-            console.error(err);
+            console.error("Verify Error:", err);
             return res.status(500).json({ error: err.message });
         }
     }
-    // Secure Webhook endpoint (fixed)
+    // =================================================================
+    // 2. Webhook (Called by Korapay in background)
+    // =================================================================
     static async webhook(req, res) {
         try {
-            const rawBody = req.body; // Should be Buffer from bodyParser.raw()
-            if (!rawBody || rawBody.length === 0) {
-                console.error("rawBody missing!", { body: req.body, headers: req.headers });
+            const rawBody = req.body;
+            if (!rawBody || rawBody.length === 0)
                 return res.status(400).json({ error: "Missing raw payload" });
-            }
+            // 1. Parse Raw Body
             const payloadString = Buffer.from(rawBody).toString("utf-8");
-            console.log("Received payloadString:", payloadString);
             let parsed;
             try {
                 parsed = JSON.parse(payloadString);
             }
             catch (e) {
-                console.error("JSON parse error:", e, { payload: payloadString });
                 return res.status(400).json({ error: "Invalid JSON payload" });
             }
             const { event, data } = parsed;
-            if (!data) {
-                console.error("Missing data in payload", { parsed });
+            if (!data)
                 return res.status(400).json({ error: "Invalid payload structure" });
-            }
+            // 2. Verify Signature (Security)
             const expectedSignature = crypto_1.default
                 .createHmac("sha256", process.env.KORAPAY_SECRET_KEY)
                 .update(JSON.stringify(data))
                 .digest("hex");
             const signature = req.headers["x-korapay-signature"];
-            if (!signature) {
-                console.warn("Missing signature header", { headers: req.headers });
+            if (!signature || signature !== expectedSignature)
                 return res.status(403).json({ error: "Unauthorized: missing signature" });
-            }
-            if (signature !== expectedSignature) {
-                console.warn("Invalid webhook signature", { received: signature, expected: expectedSignature });
-                return res.status(403).json({ error: "Unauthorized: invalid signature" });
-            }
             const { reference } = data;
-            let order;
-            try {
-                order = await prisma.order.findUnique({ where: { reference } });
-                if (!order)
-                    return res.status(404).json({ error: "Order not found" });
-            }
-            catch (dbErr) {
-                console.error("Prisma DB error:", dbErr);
-                return res.status(500).json({ error: "Database query failed" });
-            }
+            // 3. Handle Events
             if (event === "charge.success") {
-                await prisma.order.update({ where: { reference }, data: { paymentStatus: "PAID" } });
+                // ✅ FIX: Single Source of Truth. 
+                // We just tell the service: "Payment is done, do your job."
+                await order_service_1.OrderService.processSuccessfulPayment(reference);
             }
             else if (event === "charge.failed") {
-                await prisma.order.update({ where: { reference }, data: { paymentStatus: "FAILED" } });
+                await prisma.order.update({
+                    where: { reference },
+                    data: { paymentStatus: "FAILED" },
+                });
             }
-            console.log("Webhook processed successfully:", reference, event);
             return res.sendStatus(200);
         }
         catch (err) {

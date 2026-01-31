@@ -10,9 +10,7 @@ import authRouter from "./auth/auth.route";
 import restaurantRouter from "./restuarant/restaurant.route";
 import orderRouter from "./order/order.routes";
 import paymentRouter from "./payment/payment.route";
-import dispatchRouter from "./dispatch/dispatch.route"
 import adminRouter from "./admin/admin.route";
-import notificationRouter from "./notifications/notification.route"
 
 const app = express();
 
@@ -58,9 +56,7 @@ app.use("/api/auth", authRouter);
 app.use("/api/restaurant", restaurantRouter);
 app.use("/api/orders", orderRouter);
 app.use("/api/payment", paymentRouter);
-app.use("/api/dispatch", dispatchRouter)
 app.use("/api/admin", adminRouter);
-app.use("/api/notifications", notificationRouter);
 
 // 6. Global Error Handler
 app.use(

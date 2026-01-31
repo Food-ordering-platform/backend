@@ -1,4 +1,4 @@
-import { OrderStatus, PrismaClient } from "@prisma/client";
+import { OrderStatus, PrismaClient, TransactionCategory, TransactionStatus, TransactionType } from "@prisma/client";
 import { PaymentService } from "../payment/payment.service";
 import { randomBytes } from "crypto";
 import { sendDeliveryCode, sendOrderStatusEmail } from "../utils/mailer";
@@ -7,6 +7,7 @@ import { getSocketIO } from "../utils/socket";
 import { calculateDistance, calculateDeliveryFee } from "../utils/haversine";
 import { PRICING } from "../config/pricing";
 import { sendWebPushNotification } from "../utils/web-push";
+import { OrderStateMachine } from "../utils/order-state-machine";
 
 const prisma = new PrismaClient();
 
@@ -326,42 +327,93 @@ export class OrderService {
   }
 
   // ✅ UPDATED: Sends delivery code using REAL DB reference
+//
+
   static async updateOrderStatus(orderId: string, status: OrderStatus) {
+    // 1. Fetch Order with all necessary relations (Customer, Restaurant, Items)
+    // We need 'items' now to show the rider how many items are in the package
     const order = await prisma.order.findUnique({
       where: { id: orderId },
-      include: { restaurant: true },
+      include: { 
+        restaurant: true, 
+        customer: true,
+        items: true 
+      },
     });
-
+    
     if (!order) throw new Error("Order not found");
+    
+    // 2. Validate Transition
+    // This throws an error automatically if invalid, no need for if(!...)
+    OrderStateMachine.validateTransition(order.status, status);
 
     let newPaymentStatus = order.paymentStatus;
-
+    
+    // 3. Handle Refunds if Cancelled
     if (status === "CANCELLED" && order.paymentStatus === "PAID") {
-        await PaymentService.refund(order.reference).catch(e => console.error("Refund failed", e));
-        newPaymentStatus = "REFUNDED";
+      await PaymentService.refund(order.reference).catch(e => console.error("Refund failed", e));
+      newPaymentStatus = "REFUNDED"; // Ensure this matches your PaymentStatus enum
     }
 
+    // 4. Update Database
     const updatedOrder = await prisma.order.update({
       where: { id: orderId },
       data: { status, paymentStatus: newPaymentStatus },
-      include: { customer: true },
+      include: { 
+        customer: true, 
+        restaurant: true, 
+        items: true 
+      },
     });
 
+    // 5. 🟢 SOCKET BROADCASTS
     try {
         const io = getSocketIO();
+
+        // A. Notify Vendor (Your existing logic)
         io.to(`restaurant_${order.restaurantId}`).emit("order_updated", { 
             orderId: order.id,
             status: status 
         });
+
+        // B. Notify Customer (Standard practice so their app updates live)
+        io.to(`order_${orderId}`).emit("order_update", updatedOrder);
+
+        // C. 🚀 NEW: Notify Riders if Ready for Pickup
+        if (status === "READY_FOR_PICKUP") {
+            console.log(`📢 Broadcasting Order ${order.reference} to Riders`);
+            
+            io.to("riders_main_feed").emit("new_delivery_available", {
+                type: "NEW_ORDER",
+                order: {
+                    id: updatedOrder.id,
+                    reference: updatedOrder.reference,
+                    restaurantName: updatedOrder.restaurant.name,
+                    restaurantAddress: updatedOrder.restaurant.address,
+                    deliveryAddress: updatedOrder.deliveryAddress,
+                    deliveryFee: updatedOrder.deliveryFee,
+                    totalAmount: updatedOrder.totalAmount,
+                    itemsCount: updatedOrder.items.length,
+                    // Add lat/lng if you have them for distance calculation on frontend
+                    restaurantLat: updatedOrder.restaurant.latitude,
+                    restaurantLng: updatedOrder.restaurant.longitude,
+                    deliveryLat: updatedOrder.deliveryLatitude,
+                    deliveryLng: updatedOrder.deliveryLongitude,
+                }
+            });
+        }
+
     } catch (e) {
         console.error("Socket emit failed", e);
     }
 
+    // 6. Notifications (Your existing logic)
     if (status === "PREPARING") {
         if (updatedOrder.customer?.pushToken) {
             sendPushNotification(updatedOrder.customer.pushToken, "Order Accepted!", "The vendor is preparing your food.");
         }
         
+        // Send Delivery Code via Email
         if (updatedOrder.customer?.email && updatedOrder.deliveryCode) {
             sendDeliveryCode(
                 updatedOrder.customer.email,
@@ -371,56 +423,7 @@ export class OrderService {
         }
     }
 
-    // 🟢 UPDATED: Notify ALL Logistics Partners
-    if (status === "READY_FOR_PICKUP") {
-      try {
-        // 1. Fetch ALL Logistics Partners (with their Owner details for the User ID)
-        const allPartners = await prisma.logisticsPartner.findMany({
-            include: { owner: true }
-        });
-
-        console.log(`🔔 Broadcasting 'Ready for Pickup' to ${allPartners.length} Dispatchers`);
-
-        // 2. Send Push Notification to EACH Partner's Owner
-        const pushPromises = allPartners.map(partner => {
-            if (partner.owner?.id) {
-                return sendWebPushNotification(partner.owner.id, {
-                    title: "New Job Alert! 🚨",
-                    body: `Order #${order.reference} is ready at ${order.restaurant.name}`,
-                    url: `/dashboard/orders`, // Opens the dispatch dashboard
-                    data: {
-                        orderId: order.id,
-                        status: 'READY_FOR_PICKUP',
-                        trackingId: order.trackingId,
-                        type: 'DISPATCH_BROADCAST'
-                    }
-                }).catch(err => console.error(`Failed to push to ${partner.name}:`, err));
-            }
-        });
-
-        await Promise.all(pushPromises);
-
-        // 3. Socket Emit (This naturally goes to all dispatchers listening)
-        const io = getSocketIO();
-        io.to("dispatchers").emit("new_dispatcher_request", {
-          orderId: order.id,
-          status: status,
-          restaurantName: order.restaurant.name,
-          restaurantAddress: order.restaurant.address,
-          customerAddress: order.deliveryAddress,
-          totalAmount: order.totalAmount,
-          deliveryFee: order.deliveryFee,
-          pickupTime: new Date().toISOString(),
-        });
-        
-        console.log(`🚚 Riders Requested for Order #${order.reference}`);
-
-      } catch (error) {
-        console.error("Broadcast error:", error);
-      }
-    }
-
-    // Standard Status Email
+    // 7. Standard Status Email (Your existing logic)
     if (updatedOrder.customer?.email) {
       sendOrderStatusEmail(
         updatedOrder.customer.email,
@@ -431,5 +434,92 @@ export class OrderService {
     }
 
     return updatedOrder;
+  }
+
+  static async acceptOrder(orderId: string, riderId: string) {
+    return await prisma.$transaction(async (tx) => {
+        const order = await tx.order.findUnique({ where: { id: orderId } });
+        
+        if (!order) throw new Error("Order not found");
+        if (order.status !== OrderStatus.READY_FOR_PICKUP) throw new Error("Order is no longer available");
+        if (order.riderId) throw new Error("Order already accepted by another rider");
+
+        // Update Order
+        const updatedOrder = await tx.order.update({
+            where: { id: orderId },
+            data: {
+                status: OrderStatus.RIDER_ACCEPTED, // Matches your Enum
+                riderId: riderId
+            },
+            include: { restaurant: true, customer: true }
+        });
+
+        // Notify
+        const io = getSocketIO();
+        io.to(`order_${orderId}`).emit("order_update", updatedOrder); // Notify Customer
+        io.to("riders_main_feed").emit("order_taken", { orderId });   // Remove from other riders
+
+        return updatedOrder;
+    });
+  }
+
+  static async completeOrder(orderId: string, riderId: string) {
+    return await prisma.$transaction(async (tx) => {
+        const order = await tx.order.findUnique({ where: { id: orderId } });
+        
+        if (!order) throw new Error("Order not found");
+        if (order.riderId !== riderId) throw new Error("Unauthorized: You are not the rider for this order");
+        if (order.status === OrderStatus.DELIVERED) throw new Error("Order already delivered");
+
+        // 1. Update Status
+        const updatedOrder = await tx.order.update({
+            where: { id: orderId },
+            data: { status: OrderStatus.DELIVERED }
+        });
+
+        // 2. Credit Rider Wallet
+        if (order.deliveryFee > 0) {
+            await tx.transaction.create({
+                data: {
+                    userId: riderId,
+                    amount: order.deliveryFee,
+                    type: TransactionType.CREDIT,
+                    category: TransactionCategory.DELIVERY_FEE, // Matches your Enum
+                    status: TransactionStatus.SUCCESS,
+                    description: `Delivery Earnings - Order #${order.reference}`,
+                    orderId: order.id,
+                    reference: `EARN-${order.reference}`
+                }
+            });
+        }
+
+        getSocketIO().to(`order_${orderId}`).emit("order_update", updatedOrder);
+        return updatedOrder;
+    });
+  }
+
+  static async getRiderStats(riderId: string) {
+    const transactions = await prisma.transaction.findMany({
+        where: { userId: riderId, status: TransactionStatus.SUCCESS }
+    });
+
+    const totalEarnings = transactions
+        .filter(t => t.type === TransactionType.CREDIT)
+        .reduce((sum, t) => sum + t.amount, 0);
+
+    const withdrawals = transactions
+        .filter(t => t.type === TransactionType.DEBIT)
+        .reduce((sum, t) => sum + t.amount, 0);
+
+    const deliveredOrders = await prisma.order.count({
+        where: { riderId, status: OrderStatus.DELIVERED }
+    });
+
+    return {
+        balance: totalEarnings - withdrawals,
+        totalEarnings,
+        deliveredOrders,
+        recentTransactions: transactions.slice(0, 10)
+    };
   }
 }

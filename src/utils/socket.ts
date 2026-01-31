@@ -14,11 +14,17 @@ export const initSocket = (httpServer: HttpServer) => {
   io.on("connection", (socket) => {
     console.log("🟢 User connected:", socket.id);
 
-    // Join a "Room" based on User ID or Restaurant ID
-    // Frontend will emit 'join_room' with their ID
+    // Join a specific "Room" (e.g., "order_123" or "restaurant_456")
+    // Frontend (Customer/Vendor) will emit 'join_room' with their specific ID
     socket.on("join_room", (room) => {
       socket.join(room);
       console.log(`User ${socket.id} joined room: ${room}`);
+    });
+
+    // 🏍️ RIDER SPECIFIC: Riders join this global room to see "Ready for Pickup" orders
+    socket.on("join_rider_feed", () => {
+        socket.join("riders_main_feed");
+        console.log(`🏍️ Rider ${socket.id} joined rider feed`);
     });
 
     socket.on("disconnect", () => {

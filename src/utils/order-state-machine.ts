@@ -15,7 +15,10 @@ export class OrderStateMachine {
     PREPARING: ["READY_FOR_PICKUP", "CANCELLED"],
 
     ///food is ready rider picks it up
-    READY_FOR_PICKUP: ["OUT_FOR_DELIVERY", "CANCELLED"],
+    READY_FOR_PICKUP: ["RIDER_ACCEPTED", "CANCELLED"],
+
+
+    RIDER_ACCEPTED:["OUT_FOR_DELIVERY", "CANCELLED"],
 
     //Rider has picked up
     OUT_FOR_DELIVERY: ["DELIVERED", "CANCELLED"],

@@ -31,9 +31,6 @@ model User {
   latitude    Float?
   longitude   Float?
 
-
-// [NEW] Link user to a Logistics Company
-  logisticsPartner LogisticsPartner? @relation("LogisticsOwner")
   // [NEW] The orders this user (Rider) has delivered
   deliveries   Order[]  @relation("RiderOrders")
 
@@ -180,11 +177,8 @@ model Order {
   riderPhone    String?
 
   // === NEW FIELDS FOR LOGISTICS ===
-  trackingId        String?  @unique // The "Rider Link" ID (e.g. "task-abc-123")
   deliveryCode      String?  // The OTP the customer gives the rider (e.g. "4590")
   
-  logisticsPartner   LogisticsPartner? @relation(fields: [logisticsPartnerId], references: [id])
-  logisticsPartnerId String?
 
   transactions Transaction[]
 
@@ -216,6 +210,7 @@ enum OrderStatus {
   PENDING
   PREPARING
   READY_FOR_PICKUP   // <--- ADD THIS LINE
+  RIDER_ACCEPTED
   OUT_FOR_DELIVERY 
   DELIVERED
   CANCELLED
@@ -233,7 +228,6 @@ enum Role {
   VENDOR
   ADMIN
   RIDER 
-  DISPATCHER // [NEW] This is for your logistics partner's manager
 }
 
 model Transaction {
@@ -277,27 +271,6 @@ enum TransactionStatus {
   FAILED
 }
 
-model LogisticsPartner {
-  id            String   @id @default(uuid())
-  name          String
-  
-  // [NEW] Contact Details for the Business
-  email         String   @unique 
-  phone         String
-  address       String
-
-  // [NEW] Linked to a User Account (The Manager/Dispatcher)
-  owner         User     @relation("LogisticsOwner", fields: [ownerId], references: [id])
-  ownerId       String   @unique
-
-  // [REMOVED] secretKey String @unique
-
-  walletBalance Float    @default(0.0)
-  orders        Order[]
-
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-}
 
 
 // Add this model to your schema.prisma

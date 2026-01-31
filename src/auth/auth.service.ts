@@ -18,7 +18,7 @@ export class AuthService {
     email: string,
     password: string,
     phone: string, 
-    role: "CUSTOMER" | "VENDOR" | "DISPATCHER" | "RIDER"  = "CUSTOMER",
+    role: "CUSTOMER" | "VENDOR" |  "RIDER"  = "CUSTOMER",
     termsAcceptedAt: Date,
     address?: string
   ) {
@@ -69,17 +69,6 @@ export class AuthService {
           },
         });
 
-        if (role === "DISPATCHER") {
-            await tx.logisticsPartner.create({
-                data: {
-                    name: `${name}'s Logistics`,
-                    email: email, 
-                    phone: phone, 
-                    address: address || "Update Your Office Address",
-                    ownerId: user.id
-                }
-            });
-        }
         return user;
     });
 

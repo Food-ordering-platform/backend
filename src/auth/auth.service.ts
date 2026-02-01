@@ -42,13 +42,7 @@ export class AuthService {
         const code = await this.generateOtp(updatedUser.id);
         await sendOtPEmail(updatedUser.email, code);
 
-        const token = jwt.sign(
-          { userId: updatedUser.id, role: updatedUser.role },
-          process.env.JWT_SECRET as string,
-          { expiresIn: "30m" } 
-        );
-
-        return { user: updatedUser, token };
+        return { user: updatedUser };
       }
       throw new Error("This email is already registered. Please login.");
     }
@@ -74,15 +68,9 @@ export class AuthService {
 
     const code = await this.generateOtp(result.id);
 
-    const token = jwt.sign(
-      { userId: result.id, role: result.role },
-      process.env.JWT_SECRET as string,
-      { expiresIn: "30m" } 
-    );
-
     sendOtPEmail(result.email, code).catch(err => console.error("Failed to send OTP email:", err));
 
-    return { user: result, token };
+    return { user: result};
   }
 
   // ------------------ LOGIN ------------------
@@ -114,7 +102,7 @@ export class AuthService {
     const token = jwt.sign(
       { userId: user.id, role: user.role },
       process.env.JWT_SECRET as string,
-      { expiresIn: "7d" }
+      { expiresIn: "1hr" }
     );
 
     sendLoginAlertEmail(user.email, user.name)
@@ -170,7 +158,7 @@ export class AuthService {
     const jwtToken = jwt.sign(
       { userId: user.id, role: user.role },
       process.env.JWT_SECRET as string,
-      { expiresIn: "7d" }
+      { expiresIn: "1hr" }
     );
 
     if(user.email) {
@@ -244,51 +232,39 @@ export class AuthService {
     return code;
   }
 
-  static async verifyOtp(token: string, code: string) {
-    try {
-      const payload = jwt.verify(
-        token,
-        process.env.JWT_SECRET as string
-      ) as { userId: string };
-
-      const otp = await prisma.otp.findFirst({
-        where: {
-          userId: payload.userId,
-          code,
-          used: false,
-          expiresAt: { gt: new Date() },
-        },
-      });
- 
-      if (!otp) throw new Error("The code you entered is invalid or has expired.");
-
-      await prisma.otp.update({
-        where: { id: otp.id },
-        data: { used: true },
-      });
-
-      const user = await prisma.user.update({
-        where: { id: payload.userId },
-        data: { isVerified: true },
-      });
-
-      const sessionToken = jwt.sign(
-        { userId: user.id, role: user.role },
-        process.env.JWT_SECRET as string,
-        { expiresIn: "24h" }
-      );
-
-      return {
-        message: "Account Verified Successfully",
-        user: { id: user.id, email: user.email, role: user.role },
-        token: sessionToken, 
-      };
-    } catch (error: any) {
-        if(error.message === "The code you entered is invalid or has expired."){
-            throw error;
-        }
-        throw new Error("Your session has expired. Please login again to get a new code.");
+  static async verifyOtp(email: string, code: string) {
+    const user = await prisma.user.findUnique({ where: { email } });
+    if (!user) {
+      throw new Error("User not found");
     }
+
+    // Find the OTP for this user
+    const otpRecord = await prisma.otp.findFirst({
+      where: {
+        userId: user.id,
+        code,
+        used: false,
+        expiresAt: { gt: new Date() }, // Check if not expired
+      },
+    });
+
+    if (!otpRecord) {
+      throw new Error ("Invalid or expired OTP");
+    }
+
+    // Mark user as verified
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { isVerified: true },
+    });
+
+    // Mark OTP as used
+    await prisma.otp.update({
+      where: { id: otpRecord.id },
+      data: { used: true },
+    });
+
+    return { message: "Email verified successfully. Please login." };
   }
 
   // ------------------ FORGOT PASSWORD ------------------

@@ -149,45 +149,45 @@ export class OrderController {
     }
   }
 
-  static async acceptOrder(req: Request, res: Response) {
-    try {
-        const { id } = req.params;
-        const riderId = req.user?.id; 
+  // static async acceptOrder(req: Request, res: Response) {
+  //   try {
+  //       const { id } = req.params;
+  //       const riderId = req.user?.id; 
 
-        if (!riderId) return res.status(401).json({ success: false, message: "Unauthorized" });
+  //       if (!riderId) return res.status(401).json({ success: false, message: "Unauthorized" });
 
-        const order = await OrderService.acceptOrder(id, riderId);
-        return res.status(200).json({ success: true, data: order });
-    } catch (err: any) {
-        return res.status(400).json({ success: false, message: err.message });
-    }
-  }
+  //       const order = await OrderService.acceptOrder(id, riderId);
+  //       return res.status(200).json({ success: true, data: order });
+  //   } catch (err: any) {
+  //       return res.status(400).json({ success: false, message: err.message });
+  //   }
+  // }
 
-  static async completeOrder(req: Request, res: Response) {
-    try {
-        const { id } = req.params;
-        const riderId = req.user?.id;
+  // static async completeOrder(req: Request, res: Response) {
+  //   try {
+  //       const { id } = req.params;
+  //       const riderId = req.user?.id;
 
-        if (!riderId) return res.status(401).json({ success: false, message: "Unauthorized" });
+  //       if (!riderId) return res.status(401).json({ success: false, message: "Unauthorized" });
 
-        const order = await OrderService.completeOrder(id, riderId);
-        return res.status(200).json({ success: true, data: order });
-    } catch (err: any) {
-        return res.status(400).json({ success: false, message: err.message });
-    }
-  }
+  //       const order = await OrderService.completeOrder(id, riderId);
+  //       return res.status(200).json({ success: true, data: order });
+  //   } catch (err: any) {
+  //       return res.status(400).json({ success: false, message: err.message });
+  //   }
+  // }
 
-  static async getRiderStats(req: Request, res: Response) {
-    try {
-        const riderId = req.user?.id;
-        if (!riderId) return res.status(401).json({ success: false, message: "Unauthorized" });
+  // static async getRiderStats(req: Request, res: Response) {
+  //   try {
+  //       const riderId = req.user?.id;
+  //       if (!riderId) return res.status(401).json({ success: false, message: "Unauthorized" });
 
-        const stats = await OrderService.getRiderStats(riderId);
-        return res.status(200).json({ success: true, data: stats });
-    } catch (err: any) {
-        return res.status(500).json({ success: false, message: err.message });
-    }
-  }
+  //       const stats = await OrderService.getRiderStats(riderId);
+  //       return res.status(200).json({ success: true, data: stats });
+  //   } catch (err: any) {
+  //       return res.status(500).json({ success: false, message: err.message });
+  //   }
+  // }
 
 
   // Add inside OrderController class

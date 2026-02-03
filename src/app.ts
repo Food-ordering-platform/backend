@@ -11,6 +11,7 @@ import restaurantRouter from "./restuarant/restaurant.route";
 import orderRouter from "./order/order.routes";
 import paymentRouter from "./payment/payment.route";
 import adminRouter from "./admin/admin.route";
+import riderRoutes from "./rider/rider.route";
 
 const app = express();
 
@@ -57,6 +58,7 @@ app.use("/api/restaurant", restaurantRouter);
 app.use("/api/orders", orderRouter);
 app.use("/api/payment", paymentRouter);
 app.use("/api/admin", adminRouter);
+app.use("/api/rider", riderRoutes);
 
 // 6. Global Error Handler
 app.use(

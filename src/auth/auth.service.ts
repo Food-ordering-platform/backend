@@ -253,7 +253,7 @@ export class AuthService {
     }
 
     // Mark user as verified
-    await prisma.user.update({
+   const isVerified = await prisma.user.update({
       where: { id: user.id },
       data: { isVerified: true },
     });
@@ -264,7 +264,7 @@ export class AuthService {
       data: { used: true },
     });
 
-    return { message: "Email verified successfully. Please login." };
+    return { isVerified: true };
   }
 
   // ------------------ FORGOT PASSWORD ------------------

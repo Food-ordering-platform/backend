@@ -1,6 +1,7 @@
 import { PrismaClient, OrderStatus, TransactionType, TransactionCategory, TransactionStatus } from "@prisma/client";
 import { getSocketIO } from "../utils/socket";
 import { OrderStateMachine } from "../utils/order-state-machine";
+import { PaymentService } from "../payment/payment.service";
 
 const prisma = new PrismaClient();
 
@@ -278,27 +279,80 @@ export class RiderService {
    * 4. Request Payout
    * Creates a withdrawal request (Debit Transaction).
    */
-  static async requestPayout(riderId: string, amount: number) {
-    // 1. Check Balance
+static async requestPayout(
+    riderId: string, 
+    amount: number, 
+    bankDetails: { bankCode: string; accountNumber: string } // Rider must provide these
+  ) {
+    // 1. Check Internal Balance
     const { availableBalance } = await this.getRiderEarnings(riderId);
 
     if (amount <= 0) throw new Error("Invalid amount");
+    if (amount < 100) throw new Error("Minimum withdrawal is 100"); // Paystack min is often NGN 100
     if (amount > availableBalance) throw new Error("Insufficient funds");
 
-    // 2. Create Payout Request
-    // This creates a PENDING transaction. An admin or cron job would process the actual bank transfer.
-    const payout = await prisma.transaction.create({
-      data: {
-        userId: riderId,
-        amount: amount,
-        type: TransactionType.DEBIT,
-        category: TransactionCategory.WITHDRAWAL,
-        status: TransactionStatus.PENDING,
-        description: "Payout Request",
-        reference: `PAYOUT-${Date.now()}-${riderId.slice(0,4)}`
-      }
-    });
+    const reference = `PAYOUT-${Date.now()}-${riderId.slice(0, 4)}`;
 
-    return payout;
+    return await prisma.$transaction(async (tx) => {
+      
+      // 2. Verify Bank Account (Resolve Name)
+      const accountInfo = await PaymentService.resolveAccount(
+        bankDetails.accountNumber, 
+        bankDetails.bankCode
+      );
+
+      // 3. Create Paystack Recipient
+      // Note: In a production app, you might save this 'recipient_code' to the User model 
+      // so you don't generate it every time.
+      const recipientCode = await PaymentService.createTransferRecipient(
+        accountInfo.account_name,
+        bankDetails.accountNumber,
+        bankDetails.bankCode
+      );
+
+      // 4. Create Pending Transaction Record (Lock the funds internally)
+      const transaction = await tx.transaction.create({
+        data: {
+          userId: riderId,
+          amount: amount, // Stored as positive number, logic handles it as debit
+          type: TransactionType.DEBIT,
+          category: TransactionCategory.WITHDRAWAL,
+          status: TransactionStatus.PENDING, // Pending until Paystack accepts
+          description: `Payout to ${accountInfo.account_name}`,
+          reference: reference
+        }
+      });
+
+      // 5. Trigger Paystack Transfer
+      // If this fails, the Prisma Transaction will rollback, so no money is lost internally.
+      const transferResult = await PaymentService.initiateTransfer(
+        amount,
+        recipientCode,
+        reference,
+        "ChowEazy Rider Payout"
+      );
+
+      // 6. Update Transaction Status based on Paystack Response
+      // Paystack transfers are usually "queued" (OTP) or "success" (Instant).
+      // If queued, we keep it PENDING. If success, we mark SUCCESS.
+      let finalStatus: TransactionStatus = TransactionStatus.PENDING;
+      
+      if (transferResult.status === "success") {
+        finalStatus = TransactionStatus.SUCCESS;
+      } else if (transferResult.status === "failed") {
+          throw new Error("Paystack rejected the transfer");
+      }
+
+      const updatedTransaction = await tx.transaction.update({
+        where: { id: transaction.id },
+        data: { 
+            status: finalStatus,
+            // You could store the transfer_code in description or a new field if needed
+            description: `Payout to ${accountInfo.account_name} (Ref: ${transferResult.transfer_code})`
+        }
+      });
+
+      return updatedTransaction;
+    });
   }
 }

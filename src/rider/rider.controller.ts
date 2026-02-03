@@ -129,17 +129,30 @@ export class RiderController {
   }
 
   // 4. Request Payout
-  static async requestPayout(req: Request, res: Response) {
+ static async requestPayout(req: Request, res: Response) {
     try {
       const riderId = req.user?.id;
-      const { amount } = req.body;
+      const { amount, bankCode, accountNumber } = req.body;
 
       if (!riderId) return res.status(401).json({ success: false, message: "Unauthorized" });
       if (!amount) return res.status(400).json({ success: false, message: "Amount is required" });
+      if (!bankCode || !accountNumber) {
+        return res.status(400).json({ success: false, message: "Bank Code and Account Number are required" });
+      }
 
-      const payout = await RiderService.requestPayout(riderId, Number(amount));
-      return res.status(201).json({ success: true, message: "Payout request submitted", data: payout });
+      const payout = await RiderService.requestPayout(
+        riderId, 
+        Number(amount), 
+        { bankCode, accountNumber }
+      );
+      
+      return res.status(201).json({ 
+        success: true, 
+        message: "Payout processed successfully", 
+        data: payout 
+      });
     } catch (err: any) {
+      console.error("Payout Error:", err.message);
       return res.status(400).json({ success: false, message: err.message });
     }
   }

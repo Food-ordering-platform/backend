@@ -45,6 +45,8 @@ model User {
   webPushSubscriptions WebPushSubscription[]
 
   reviews              Review[]
+
+  isOnline    Boolean    @default(false)
 }
 
 model Otp {

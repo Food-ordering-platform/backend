@@ -16,6 +16,20 @@ export class RiderController {
     }
   }
 
+  // Get Current Active Order
+  static async getActiveOrder(req: Request, res: Response) {
+    try {
+      const riderId = req.user?.id;
+      if (!riderId) return res.status(401).json({ success: false, message: "Unauthorized" });
+
+      const order = await RiderService.getActiveOrder(riderId);
+      // Return null if no active order, that's fine
+      return res.status(200).json({ success: true, data: order }); 
+    } catch (err: any) {
+      return res.status(500).json({ success: false, message: err.message });
+    }
+  }
+
   // 2. Accept Order
   static async acceptOrder(req: Request, res: Response) {
     try {

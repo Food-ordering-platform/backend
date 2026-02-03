@@ -51,6 +51,22 @@ export class RiderService {
     });
   }
 
+  static async getActiveOrder(riderId: string) {
+    return prisma.order.findFirst({
+      where: {
+        riderId: riderId,
+        status: {
+          in: [OrderStatus.RIDER_ACCEPTED, OrderStatus.OUT_FOR_DELIVERY] 
+        }
+      },
+      include: {
+        restaurant: true,
+        customer: true,
+        items: true
+      }
+    });
+  }
+
   /**
    * 2. Accept an Order
    * Locks the order to the specific rider and changes status to RIDER_ACCEPTED.

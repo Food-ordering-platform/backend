@@ -14,6 +14,10 @@ router.use(authMiddleware);
  */
 router.get("/orders/available", RiderController.getAvailableOrders);
 
+
+// Add this before or after the other GET routes
+router.get("/orders/active", RiderController.getActiveOrder);
+
 /**
  * @route   PATCH /api/rider/orders/:id/accept
  * @desc    Accept an order (assigns to rider, status -> RIDER_ACCEPTED)

@@ -73,6 +73,8 @@ export class RiderService {
         include: { restaurant: true, customer: true }
       });
 
+      await tx.user.update({ where: { id: riderId }, data: { isOnline: false } });
+
       // Notify Customer & Vendor
       const io = getSocketIO();
       io.to(`order_${orderId}`).emit("order_update", updatedOrder);
@@ -133,6 +135,91 @@ export class RiderService {
       return updatedOrder;
     });
   }
+
+  // ---> NEW METHOD: Handle Pickup & Delivery <---
+  static async comfirmPickup(riderId: string, orderId: string, status: OrderStatus) {
+    return await prisma.$transaction(async (tx) => {
+      const order = await tx.order.findUnique({ where: { id: orderId } });
+      
+      if (!order) throw new Error("Order not found");
+      if (order.riderId !== riderId) throw new Error("Unauthorized");
+
+      // Update the status
+      const updatedOrder = await tx.order.update({
+        where: { id: orderId },
+        data: { status: OrderStatus.OUT_FOR_DELIVERY },
+        include: { restaurant: true, customer: true }
+      });
+
+      // If Delivered, mark rider as Online again (Available for new jobs)
+      // if (status === OrderStatus.DELIVERED) {
+      //    await tx.user.update({ where: { id: riderId }, data: { isOnline: true } });
+      // }
+
+      // Notify Customer
+      const io = getSocketIO();
+      io.to(`order_${orderId}`).emit("order_update", updatedOrder);
+      
+      return updatedOrder;
+    });
+  }
+
+
+  static async confirmDelivery(riderId: string, orderId: string, code: string) {
+    return await prisma.$transaction(async (tx) => {
+      const order = await tx.order.findUnique({ where: { id: orderId } });
+      
+      if (!order) throw new Error("Order not found");
+      if (order.riderId !== riderId) throw new Error("Unauthorized access to this order");
+      
+      // 1. Verify OTP
+      // Note: Make sure your order creation logic actually generates this code! 
+      // If it's null currently, you might need a fallback or ensure it's generated on order creation.
+      if (!order.deliveryCode) throw new Error("System Error: No delivery code generated for this order.");
+      
+      if (order.deliveryCode !== code) {
+        throw new Error("Invalid Delivery Code. Please ask the customer for the correct 4-digit code.");
+      }
+
+      // 2. Update Order Status
+      const updatedOrder = await tx.order.update({
+        where: { id: orderId },
+        data: { 
+          status: OrderStatus.DELIVERED,
+        },
+        include: { restaurant: true, customer: true }
+      });
+
+      // 3. Process Payment to Rider (Delivery Fee)
+      // We credit the delivery fee to the rider's wallet
+      await tx.transaction.create({
+        data: {
+          userId: riderId,
+          amount: order.deliveryFee, // The earning
+          type: TransactionType.CREDIT,
+          category: TransactionCategory.DELIVERY_FEE,
+          status: TransactionStatus.SUCCESS,
+          description: `Earnings for Order #${order.reference}`,
+          orderId: order.id,
+          reference: `EARN-${order.reference}-${Date.now()}`
+        }
+      });
+
+      // 4. Mark Rider as Online (Available for new jobs)
+      await tx.user.update({ 
+        where: { id: riderId }, 
+        data: { isOnline: true } 
+      });
+
+      // 5. Notify Customer & Socket
+      const io = getSocketIO();
+      io.to(`order_${orderId}`).emit("order_update", updatedOrder);
+      
+      return updatedOrder;
+    });
+  }
+
+  
 
   /**
    * 3. Get Earnings & Wallet Balance

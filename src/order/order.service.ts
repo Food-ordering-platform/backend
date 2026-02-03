@@ -432,7 +432,6 @@ export class OrderService {
         status
       );
     }
-
     return updatedOrder;
   }
 

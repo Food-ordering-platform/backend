@@ -28,6 +28,14 @@ router.patch("/orders/:id/accept", RiderController.acceptOrder);
  */
 router.patch("/orders/:id/reject", RiderController.rejectOrder);
 
+
+// Update Status: Pickup
+router.patch("/orders/:id/pickup", RiderController.confirmPickup);
+
+
+// Update Status: Delivery (Send JSON body: { "code": "1234" })
+router.patch("/orders/:id/deliver", RiderController.confirmDelivery)
+
 /**
  * @route   GET /api/rider/earnings
  * @desc    Get wallet balance, total earnings, and transaction history
@@ -41,5 +49,7 @@ router.get("/earnings", RiderController.getEarnings);
  * @access  Rider
  */
 router.post("/payout", RiderController.requestPayout);
+
+
 
 export default router;

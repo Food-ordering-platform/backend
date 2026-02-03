@@ -195,14 +195,25 @@ export class PaymentService {
   /**
    * Helper: Get List of Banks (Optional, if you need to send this to frontend)
    */
-  static async getBankList() {
-      try {
-        const response = await axios.get("https://api.paystack.co/bank", {
-            headers: { Authorization: `Bearer ${PAYSTACK_SECRET_KEY}` },
-        });
-        return response.data.data;
-      } catch (error) {
-          return [];
-      }
+static async getBankList() {
+    try {
+      const response = await axios.get("https://api.paystack.co/bank?currency=NGN", {
+        headers: { Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}` },
+      });
+      return response.data.data; // Returns array of { name, code, ... }
+    } catch (error: any) {
+      console.error("Fetch Banks Error:", error.message);
+      // Fallback to a few major banks if API fails
+      return [
+        { name: "Access Bank", code: "044" },
+        { name: "GTBank", code: "058" },
+        { name: "Zenith Bank", code: "057" },
+        { name: "UBA", code: "033" },
+        { name: "First Bank", code: "011" },
+        { name: "OPay", code: "999992" },
+        { name: "PalmPay", code: "999991" },
+        { name: "Kuda Bank", code: "50211" },
+      ];
+    }
   }
 }

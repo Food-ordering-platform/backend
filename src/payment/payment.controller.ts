@@ -94,4 +94,13 @@ export class PaymentController {
       return res.sendStatus(200);
     }
   }
+
+  static async getBanks(req: Request, res: Response) {
+    try {
+      const banks = await PaymentService.getBankList();
+      return res.status(200).json({ success: true, data: banks });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, message: "Failed to fetch banks" });
+    }
+  }
 }

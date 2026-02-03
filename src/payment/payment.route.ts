@@ -16,4 +16,6 @@ router.post(
 // 🔒 PRIVATE: Only the user who paid should verify
 router.get("/verify/:reference", authMiddleware, PaymentController.verify);
 
+router.get("/banks", authMiddleware,  PaymentController.getBanks);
+
 export default router;

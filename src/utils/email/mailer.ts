@@ -6,8 +6,7 @@ console.log("📧 GMAIL_USER defined:", !!process.env.GMAIL_USER);
 console.log("📧 GMAIL_APP_PASSWORD defined:", !!process.env.GMAIL_APP_PASSWORD);
 
 export const mailer = nodemailer.createTransport({
-  host: "smtp.gmail.com",
-  port: 465,
+  service:"gmail",
   secure: true,
   auth: {
     user: process.env.GMAIL_USER,

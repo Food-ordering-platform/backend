@@ -344,80 +344,162 @@ export class RiderService {
    * 4. Request Payout
    * Creates a withdrawal request (Debit Transaction).
    */
+// static async requestPayout(
+//     riderId: string, 
+//     amount: number, 
+//     bankDetails: { bankCode: string; accountNumber: string } // Rider must provide these
+//   ) {
+//     // 1. Check Internal Balance
+//     const { availableBalance } = await this.getRiderEarnings(riderId);
+
+//     if (amount <= 0) throw new Error("Invalid amount");
+//     if (amount < 100) throw new Error("Minimum withdrawal is 100"); // Paystack min is often NGN 100
+//     if (amount > availableBalance) throw new Error("Insufficient funds");
+
+//     const reference = `PAYOUT-${Date.now()}-${riderId.slice(0, 4)}`;
+
+//     return await prisma.$transaction(async (tx) => {
+      
+//       // 2. Verify Bank Account (Resolve Name)
+//       const accountInfo = await PaymentService.resolveAccount(
+//         bankDetails.accountNumber, 
+//         bankDetails.bankCode
+//       );
+
+//       // 3. Create Paystack Recipient
+//       // Note: In a production app, you might save this 'recipient_code' to the User model 
+//       // so you don't generate it every time.
+//       const recipientCode = await PaymentService.createTransferRecipient(
+//         accountInfo.account_name,
+//         bankDetails.accountNumber,
+//         bankDetails.bankCode
+//       );
+
+//       // 4. Create Pending Transaction Record (Lock the funds internally)
+//       const transaction = await tx.transaction.create({
+//         data: {
+//           userId: riderId,
+//           amount: amount, // Stored as positive number, logic handles it as debit
+//           type: TransactionType.DEBIT,
+//           category: TransactionCategory.WITHDRAWAL,
+//           status: TransactionStatus.PENDING, // Pending until Paystack accepts
+//           description: `Payout to ${accountInfo.account_name}`,
+//           reference: reference
+//         }
+//       });
+
+//       // 5. Trigger Paystack Transfer
+//       // If this fails, the Prisma Transaction will rollback, so no money is lost internally.
+//       const transferResult = await PaymentService.initiateTransfer(
+//         amount,
+//         recipientCode,
+//         reference,
+//         "ChowEazy Rider Payout"
+//       );
+
+//       // 6. Update Transaction Status based on Paystack Response
+//       // Paystack transfers are usually "queued" (OTP) or "success" (Instant).
+//       // If queued, we keep it PENDING. If success, we mark SUCCESS.
+//       let finalStatus: TransactionStatus = TransactionStatus.PENDING;
+      
+//       if (transferResult.status === "success") {
+//         finalStatus = TransactionStatus.SUCCESS;
+//       } else if (transferResult.status === "failed") {
+//           throw new Error("Paystack rejected the transfer");
+//       }
+
+//       const updatedTransaction = await tx.transaction.update({
+//         where: { id: transaction.id },
+//         data: { 
+//             status: finalStatus,
+//             // You could store the transfer_code in description or a new field if needed
+//             description: `Payout to ${accountInfo.account_name} (Ref: ${transferResult.transfer_code})`
+//         }
+//       });
+
+//       return updatedTransaction;
+//     });
+//   }
+
 static async requestPayout(
     riderId: string, 
     amount: number, 
-    bankDetails: { bankCode: string; accountNumber: string } // Rider must provide these
+    bankDetails: { bankCode: string; accountNumber: string }
   ) {
     // 1. Check Internal Balance
     const { availableBalance } = await this.getRiderEarnings(riderId);
 
     if (amount <= 0) throw new Error("Invalid amount");
-    if (amount < 100) throw new Error("Minimum withdrawal is 100"); // Paystack min is often NGN 100
+    if (amount < 100) throw new Error("Minimum withdrawal is 100"); 
     if (amount > availableBalance) throw new Error("Insufficient funds");
 
     const reference = `PAYOUT-${Date.now()}-${riderId.slice(0, 4)}`;
 
     return await prisma.$transaction(async (tx) => {
       
-      // 2. Verify Bank Account (Resolve Name)
+      // 2. Resolve Bank Account (This usually works on Starter Accounts)
+      // If this fails, the account number is wrong, so we SHOULD throw an error here.
       const accountInfo = await PaymentService.resolveAccount(
         bankDetails.accountNumber, 
         bankDetails.bankCode
       );
 
-      // 3. Create Paystack Recipient
-      // Note: In a production app, you might save this 'recipient_code' to the User model 
-      // so you don't generate it every time.
-      const recipientCode = await PaymentService.createTransferRecipient(
-        accountInfo.account_name,
-        bankDetails.accountNumber,
-        bankDetails.bankCode
-      );
-
-      // 4. Create Pending Transaction Record (Lock the funds internally)
+      // 3. Create the Transaction Record (Lock the funds)
+      // We mark it as PENDING initially.
       const transaction = await tx.transaction.create({
         data: {
           userId: riderId,
-          amount: amount, // Stored as positive number, logic handles it as debit
+          amount: amount, 
           type: TransactionType.DEBIT,
           category: TransactionCategory.WITHDRAWAL,
-          status: TransactionStatus.PENDING, // Pending until Paystack accepts
-          description: `Payout to ${accountInfo.account_name}`,
+          status: TransactionStatus.PENDING, 
+          description: `Payout to ${accountInfo.account_name} (${accountInfo.account_number})`,
           reference: reference
         }
       });
 
-      // 5. Trigger Paystack Transfer
-      // If this fails, the Prisma Transaction will rollback, so no money is lost internally.
-      const transferResult = await PaymentService.initiateTransfer(
-        amount,
-        recipientCode,
-        reference,
-        "ChowEazy Rider Payout"
-      );
+      // 4. Try Automatic Payout (But don't crash if it fails)
+      try {
+        const recipientCode = await PaymentService.createTransferRecipient(
+          accountInfo.account_name,
+          bankDetails.accountNumber,
+          bankDetails.bankCode
+        );
 
-      // 6. Update Transaction Status based on Paystack Response
-      // Paystack transfers are usually "queued" (OTP) or "success" (Instant).
-      // If queued, we keep it PENDING. If success, we mark SUCCESS.
-      let finalStatus: TransactionStatus = TransactionStatus.PENDING;
-      
-      if (transferResult.status === "success") {
-        finalStatus = TransactionStatus.SUCCESS;
-      } else if (transferResult.status === "failed") {
-          throw new Error("Paystack rejected the transfer");
+        const transferResult = await PaymentService.initiateTransfer(
+          amount,
+          recipientCode,
+          reference,
+          "ChowEazy Payout"
+        );
+
+        // If Paystack accepts it properly
+        if (transferResult.status === "success" || transferResult.status === "otp") {
+             // In a real live app, you might wait for a webhook to confirm success.
+             // But for now, we assume success if the API didn't error.
+             // Ideally, keep it PENDING until webhook, but for MVP:
+             // await tx.transaction.update({ ... status: SUCCESS ... })
+        }
+
+      } catch (error: any) {
+        // ⚠️ HERE IS THE FIX:
+        // We catch the "Starter Business" error here.
+        console.warn(`⚠️ Automatic Payout Failed (Falling back to Manual): ${error.message}`);
+        
+        // We update the description so the Admin knows to pay manually
+        await tx.transaction.update({
+            where: { id: transaction.id },
+            data: { 
+                description: `MANUAL PAYOUT REQUIRED: ${accountInfo.account_name} - ${accountInfo.account_number} (${error.message})` 
+            }
+        });
+
+        // WE DO NOT THROW THE ERROR. 
+        // We let the function return the 'transaction' object.
+        // This means the Rider App receives a "200 OK" and the UI updates.
       }
 
-      const updatedTransaction = await tx.transaction.update({
-        where: { id: transaction.id },
-        data: { 
-            status: finalStatus,
-            // You could store the transfer_code in description or a new field if needed
-            description: `Payout to ${accountInfo.account_name} (Ref: ${transferResult.transfer_code})`
-        }
-      });
-
-      return updatedTransaction;
+      return transaction;
     });
   }
 

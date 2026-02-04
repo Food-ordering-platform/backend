@@ -86,30 +86,32 @@ export class AuthController {
     }
   }
 
+// src/auth/auth.controller.ts
+
   static async updateProfile(req: Request, res: Response) {
     try {
-      if (!req.user) throw new Error("Unauthorized");
+      const userId = req.user?.id;
+      if (!userId) return res.status(401).json({ success: false, message: "Unauthorized" });
 
-      const { name, phone, address, latitude, longitude } = req.body;
+      // Extract pushToken from body
+      const { name, phone, address, latitude, longitude, pushToken } = req.body; 
 
-      const updatedUser = await AuthService.updateProfile(req.user.id, {
-        name,
-        phone,
-        address,
-        latitude: latitude ? parseFloat(latitude) : undefined,
-        longitude: longitude ? parseFloat(longitude) : undefined,
+      const updatedUser = await AuthService.updateProfile(userId, { 
+        name, 
+        phone, 
+        address, 
+        latitude, 
+        longitude,
+        pushToken // <--- Pass it to service
       });
 
-      return res.status(200).json({
-        success: true,
-        message: "Profile updated successfully",
-        user: updatedUser,
-      });
+      return res.status(200).json({ success: true, message: "Profile updated", data: updatedUser });
     } catch (err: any) {
-      return res.status(400).json({ error: err.message });
+      return res.status(400).json({ success: false, message: err.message });
     }
   }
 
+  
   // ------------------ VERIFY OTP ------------------
   static async verifyOtp(req: Request, res: Response) {
     try {

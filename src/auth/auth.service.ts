@@ -190,12 +190,15 @@ export class AuthService {
     return user;
   }
 
+  // src/auth/auth.service.ts
+
   static async updateProfile(userId: string, data: { 
     name?: string; 
     phone?: string; 
     address?: string; 
     latitude?: number; 
-    longitude?: number; 
+    longitude?: number;
+    pushToken?: string; // <--- 1. Add Type Here
   }) {
     return await prisma.user.update({
       where: { id: userId },
@@ -205,6 +208,7 @@ export class AuthService {
         address: data.address,
         latitude: data.latitude,
         longitude: data.longitude,
+        pushToken: data.pushToken, // <--- 2. Add Field Here
       },
       select: {
         id: true, 
@@ -215,11 +219,13 @@ export class AuthService {
         latitude: true, 
         longitude: true,
         role: true,
-        isVerified: true
+        isVerified: true,
+        // pushToken: true // Optional: if you want to see it in the response
       }
     });
   }
 
+  
   // ------------------ OTP UTILS ------------------
   static async generateOtp(userId: string) {
     const code = randomInt(100000, 999999).toString();

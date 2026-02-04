@@ -156,4 +156,16 @@ export class RiderController {
       return res.status(400).json({ success: false, message: err.message });
     }
   }
+
+  // Add to RiderController class
+static async getHistory(req: Request, res: Response) {
+  try {
+    const riderId = req.user?.id;
+    if (!riderId) return res.status(401).json({ success: false, message: "Unauthorized" });
+    const history = await RiderService.getDeliveryHistory(riderId);
+    return res.status(200).json({ success: true, data: history });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
+}
 }

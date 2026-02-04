@@ -55,5 +55,9 @@ router.get("/earnings", RiderController.getEarnings);
 router.post("/payout", RiderController.requestPayout);
 
 
+router.get("/history", RiderController.getHistory);
+
+
+
 
 export default router;

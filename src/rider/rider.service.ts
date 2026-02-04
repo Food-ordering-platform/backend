@@ -2,10 +2,19 @@ import { PrismaClient, OrderStatus, TransactionType, TransactionCategory, Transa
 import { getSocketIO } from "../utils/socket";
 import { OrderStateMachine } from "../utils/order-state-machine";
 import { PaymentService } from "../payment/payment.service";
+import { sendPushToRiders } from "../utils/push-notification";
 
 const prisma = new PrismaClient();
 
 export class RiderService {
+
+  static async notifyRidersOfNewOrder(orderId: string) {
+    await sendPushToRiders(
+      "New Delivery Alert! 🚨",
+      "A new order is ready for pickup near you.",
+      { orderId }
+    );
+  }
 
   /**
    * 1. Fetch all orders ready for pickup.
@@ -115,6 +124,20 @@ export class RiderService {
           riderPhone: riderPhone // <--- Attached here
         },
         include: { restaurant: true, customer: true }
+      });
+
+      // --- NEW: Create PENDING Transaction ---
+      await tx.transaction.create({
+        data: {
+          userId: riderId,
+          amount: order.deliveryFee, // Expected earning
+          type: TransactionType.CREDIT,
+          category: TransactionCategory.ORDER_EARNING,
+          status: TransactionStatus.PENDING, // <--- PENDING STATUS
+          description: `Pending earning for Order #${order.reference}`,
+          orderId: order.id,
+          reference: `EARN-${order.reference}-${Date.now()}`
+        }
       });
 
       // 4. Mark Rider Busy
@@ -269,6 +292,7 @@ export class RiderService {
    * Calculates pending balance and returns transaction history.
    */
   static async getRiderEarnings(riderId: string) {
+    // A. Fetch Real Transactions (Available Balance)
     const transactions = await prisma.transaction.findMany({
       where: { userId: riderId },
       orderBy: { createdAt: 'desc' }
@@ -284,9 +308,24 @@ export class RiderService {
 
     const availableBalance = totalCredits - totalDebits;
 
+    // B. Fetch Active Orders (Pending Balance)
+    // We calculate pending money by looking at orders currently in progress
+    const activeOrders = await prisma.order.findMany({
+      where: {
+        riderId: riderId,
+        status: {
+          in: [OrderStatus.RIDER_ACCEPTED, OrderStatus.OUT_FOR_DELIVERY]
+        }
+      },
+      select: { deliveryFee: true }
+    });
+
+    const pendingBalance = activeOrders.reduce((sum, order) => sum + order.deliveryFee, 0);
+
     return {
       availableBalance,
-      totalEarnings: totalCredits,
+      pendingBalance, // <--- Sent to frontend
+      totalEarnings: totalCredits, // Historical total
       withdrawn: totalDebits,
       transactions: transactions.map(t => ({
         id: t.id,
@@ -379,6 +418,20 @@ static async requestPayout(
       });
 
       return updatedTransaction;
+    });
+  }
+
+  static async getDeliveryHistory(riderId: string) {
+    return prisma.order.findMany({
+      where: {
+        riderId: riderId,
+        status: OrderStatus.DELIVERED
+      },
+      include: {
+        restaurant: { select: { name: true, imageUrl: true, address: true } },
+        customer: { select: { name: true } }
+      },
+      orderBy: { updatedAt: 'desc' }
     });
   }
 }

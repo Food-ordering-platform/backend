@@ -507,11 +507,12 @@ static async requestPayout(
     return prisma.order.findMany({
       where: {
         riderId: riderId,
-        status: OrderStatus.DELIVERED
+        status: { in: [OrderStatus.DELIVERED, OrderStatus.CANCELLED] } // Fetch both
       },
       include: {
         restaurant: { select: { name: true, imageUrl: true, address: true } },
-        customer: { select: { name: true } }
+        customer: { select: { name: true } },
+        items: { select: { quantity: true, menuItemName: true } } // <--- CRITICAL: Include Items
       },
       orderBy: { updatedAt: 'desc' }
     });

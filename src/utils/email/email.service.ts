@@ -3,6 +3,7 @@ import { generateEmailHTML } from "./templates";
 
 // --- OTP EMAIL ---
 export async function sendOtPEmail(email: string, otp: string) {
+  console.log(`[EmailService] Preparing OTP email for: ${email}`); // <--- LOG
   try {
     const html = generateEmailHTML(
       "Your Login Code",
@@ -24,12 +25,13 @@ export async function sendOtPEmail(email: string, otp: string) {
       html,
     });
   } catch (err: any) {
-    console.error("❌ OTP Email Failed:", err.message);
+    console.error("❌ OTP Email Failed in Service:", err.message);
   }
 }
 
 // --- LOGIN ALERT ---
 export async function sendLoginAlertEmail(email: string, name: string) {
+  console.log(`[EmailService] Preparing Login Alert for: ${email}`); // <--- LOG
   try {
     const html = generateEmailHTML(
       "New Login Detected",
@@ -64,6 +66,7 @@ export async function sendOrderStatusEmail(
   orderReference: string,
   status: string
 ) {
+  console.log(`[EmailService] Preparing Order Status (${status}) for: ${email}`); // <--- LOG
   try {
     const displayRef = orderReference.toUpperCase();
 
@@ -121,6 +124,7 @@ export async function sendOrderStatusEmail(
         break;
 
       default:
+        console.warn(`[EmailService] Unknown status skipped: ${status}`);
         return;
     }
 
@@ -132,7 +136,6 @@ export async function sendOrderStatusEmail(
       html,
     });
 
-    console.log(`✅ Order Email (${status}) sent to ${email}`);
   } catch (err: any) {
     console.error(`❌ Order Email Failed (${status}):`, err.message);
   }
@@ -144,6 +147,7 @@ export async function sendDeliveryCode(
   code: string,
   orderReference: string
 ) {
+  console.log(`[EmailService] Sending Delivery Code to: ${email}`); // <--- LOG
   try {
     const displayRef = orderReference.toUpperCase();
 
@@ -178,6 +182,7 @@ export async function sendPayoutRequestEmail(
   amount: number,
   bankName: string
 ) {
+  console.log(`[EmailService] Sending Payout Request Email to: ${email}`); // <--- LOG
   try {
     const html = generateEmailHTML(
       "Withdrawal Request",
@@ -213,7 +218,12 @@ export async function sendAdminPayoutAlert(
   bankDetails: any
 ) {
   const adminEmail = process.env.ADMIN_EMAIL;
-  if (!adminEmail) return;
+  console.log(`[EmailService] Sending Admin Payout Alert. Admin Email: ${adminEmail}`); // <--- LOG
+  
+  if (!adminEmail) {
+    console.warn("⚠️ ADMIN_EMAIL is not defined in .env");
+    return;
+  }
 
   try {
     const html = generateEmailHTML(

@@ -1,5 +1,9 @@
-// src/utils/email/mailer.ts
 import nodemailer from "nodemailer";
+
+// 1. Debug: Check if Environment Variables exist
+console.log("📧 Initializing Mailer...");
+console.log("📧 GMAIL_USER defined:", !!process.env.GMAIL_USER);
+console.log("📧 GMAIL_APP_PASSWORD defined:", !!process.env.GMAIL_APP_PASSWORD);
 
 export const mailer = nodemailer.createTransport({
   host: "smtp.gmail.com",
@@ -11,6 +15,15 @@ export const mailer = nodemailer.createTransport({
   },
 });
 
+// 2. Debug: Verify Connection on Startup
+mailer.verify((error, success) => {
+  if (error) {
+    console.error("❌ Mailer Connection Error:", error);
+  } else {
+    console.log("✅ Mailer Connected Successfully. Ready to send emails.");
+  }
+});
+
 export async function sendEmail({
   to,
   subject,
@@ -20,10 +33,22 @@ export async function sendEmail({
   subject: string;
   html: string;
 }) {
-  return mailer.sendMail({
-    from: `"ChowEazy" <${process.env.GMAIL_USER}>`,
-    to,
-    subject,
-    html,
-  });
+  try {
+    console.log(`📨 Attempting to send email to: ${to}`);
+    
+    const info = await mailer.sendMail({
+      from: `"ChowEazy" <${process.env.GMAIL_USER}>`,
+      to,
+      subject,
+      html,
+    });
+
+    console.log(`✅ Email sent successfully! Message ID: ${info.messageId}`);
+    return info;
+  } catch (error: any) {
+    // 3. Debug: Catch the actual Nodemailer error
+    console.error(`❌ FATAL EMAIL ERROR to ${to}:`, error.message);
+    if (error.response) console.error("SMTP Response:", error.response);
+    throw error; // Re-throw so the service catches it too
+  }
 }

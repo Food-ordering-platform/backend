@@ -6,7 +6,7 @@ import {OAuth2Client} from "google-auth-library"
 import { randomInt } from "crypto";
 import jwt from "jsonwebtoken";
 import dayjs from "dayjs";
-import { sendLoginAlertEmail, sendOtPEmail } from "../utils/mailer";
+import { sendLoginAlertEmail, sendOtPEmail } from "../utils/email/email.service";
 
 const prisma = new PrismaClient();
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID)

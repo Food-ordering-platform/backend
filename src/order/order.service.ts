@@ -1,7 +1,7 @@
 import { OrderStatus, PrismaClient, TransactionCategory, TransactionStatus, TransactionType } from "@prisma/client";
 import { PaymentService } from "../payment/payment.service";
 import { randomBytes } from "crypto";
-import { sendDeliveryCode, sendOrderStatusEmail } from "../utils/mailer";
+import { sendDeliveryCode, sendOrderStatusEmail } from "../utils/email/email.service";
 import { sendPushNotification } from "../utils/notification";
 import { getSocketIO } from "../utils/socket";
 import { calculateDistance, calculateDeliveryFee } from "../utils/haversine";

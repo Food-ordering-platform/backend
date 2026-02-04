@@ -2,7 +2,7 @@ import tr from "zod/v4/locales/tr.cjs";
 import { PrismaClient } from "@prisma/client";
 import { uploadToCloudinary } from "../cloudinary/upload";
 import { PRICING } from "../config/pricing";
-import { sendAdminPayoutAlert, sendPayoutRequestEmail } from "../utils/mailer";
+import { sendAdminPayoutAlert, sendPayoutRequestEmail } from "../utils/email/email.service";
 import { OrderService } from "../order/order.service";
 import { payoutSchema } from "./restaurant.validator";
 

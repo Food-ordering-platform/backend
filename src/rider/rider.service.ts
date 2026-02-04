@@ -61,8 +61,25 @@ export class RiderService {
         }
       },
       include: {
-        restaurant: true,
-        customer: true,
+        restaurant: {
+          select:{
+            name: true,
+            address: true,
+            latitude: true,
+            longitude: true,
+            imageUrl: true,
+            phone: true,
+          }
+        },
+        customer: {
+          select:{
+            name: true,
+            address: true,
+            phone: true,
+            latitude: true,
+            longitude:true
+          }
+        },
         items: true
       }
     });
@@ -74,35 +91,44 @@ export class RiderService {
    */
   static async acceptOrder(riderId: string, orderId: string) {
     return await prisma.$transaction(async (tx) => {
-      const order = await tx.order.findUnique({ where: { id: orderId } });
+      // 1. Fetch Rider Details (Security Best Practice: Don't trust frontend input)
+      const rider = await tx.user.findUnique({ where: { id: riderId } });
+      if (!rider) throw new Error("Rider profile not found");
+      
+      // Use fallback if name/phone missing
+      const riderName = rider.name || "ChowEazy Rider"; 
+      const riderPhone = rider.phone || "";
 
+      // 2. Fetch Order
+      const order = await tx.order.findUnique({ where: { id: orderId } });
       if (!order) throw new Error("Order not found");
       if (order.status !== OrderStatus.READY_FOR_PICKUP) throw new Error("Order is no longer available");
-      if (order.riderId) throw new Error("Order has already been taken by another rider");
+      if (order.riderId) throw new Error("Order has already been taken");
 
-      // Update Order
+      // 3. Update Order with Rider Details
       const updatedOrder = await tx.order.update({
         where: { id: orderId },
         data: {
           status: OrderStatus.RIDER_ACCEPTED,
           riderId: riderId,
+          riderName: riderName,  // <--- Attached here
+          riderPhone: riderPhone // <--- Attached here
         },
         include: { restaurant: true, customer: true }
       });
 
+      // 4. Mark Rider Busy
       await tx.user.update({ where: { id: riderId }, data: { isOnline: false } });
 
-      // Notify Customer & Vendor
+      // 5. Notify Socket
       const io = getSocketIO();
       io.to(`order_${orderId}`).emit("order_update", updatedOrder);
-      
-      // Remove from the "Available Orders" feed for other riders
       io.to("riders_main_feed").emit("order_taken", { orderId });
 
       return updatedOrder;
     });
   }
-
+  
   /**
    * 2b. Reject/Unassign Order
    * If a rider accepts by mistake or cannot fulfill it, they can "reject" it back to the pool.

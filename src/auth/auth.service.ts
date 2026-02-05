@@ -26,7 +26,7 @@ export class AuthService {
     const existingUser = await prisma.user.findUnique({ where: { email } });
 
     if (existingUser) {
-      if (!existingUser.isVerified) {
+      if (!existingUser.isEmailVerified) {
         // If unverified, update details and resend OTP
         const updatedUser = await prisma.user.update({
           where: { id: existingUser.id },
@@ -57,6 +57,7 @@ export class AuthService {
             password: hashedPassword,
             phone,
             role,
+            isEmailVerified: false,
             isVerified: false,
             termsAcceptedAt: termsAcceptedAt,
             address
@@ -82,7 +83,7 @@ export class AuthService {
     const isValid = await bcrypt.compare(password, user.password);
     if (!isValid) throw new Error("Incorrect password. Please try again.");
 
-    if (!user.isVerified) {
+    if (!user.isEmailVerified) {
       const code = await this.generateOtp(user.id);
       await sendOtPEmail(user.email, code);
 
@@ -140,7 +141,7 @@ export class AuthService {
           name: name || "Google User",
           googleId,
           avatar: picture,
-          isVerified: true, 
+          isEmailVerified: true, 
           role: "CUSTOMER",
           termsAcceptedAt: new Date(), // <--- SAVING THE DATE
         },
@@ -240,39 +241,40 @@ export class AuthService {
 
   static async verifyOtp(email: string, code: string) {
     const user = await prisma.user.findUnique({ where: { email } });
-    if (!user) {
-      throw new Error("User not found");
-    }
+    if (!user) throw new Error("User not found");
 
-    // Find the OTP for this user
     const otpRecord = await prisma.otp.findFirst({
-      where: {
-        userId: user.id,
-        code,
-        used: false,
-        expiresAt: { gt: new Date() }, // Check if not expired
-      },
+      where: { userId: user.id, code, used: false, expiresAt: { gt: new Date() } },
     });
+    if (!otpRecord) throw new Error ("Invalid or expired OTP");
 
-    if (!otpRecord) {
-      throw new Error ("Invalid or expired OTP");
-    }
+    // 🟢 NEW LOGIC: 
+    // 1. Mark Email as Verified (Allows Login)
+    // 2. Only Auto-Approve CUSTOMERS. Riders remain Pending.
+    
+    const updateData: any = { 
+        isEmailVerified: true 
+    };
 
-    // Mark user as verified
-   const isVerified = await prisma.user.update({
+    if (user.role === 'CUSTOMER') {
+        updateData.isVerified = true; // Auto-verify customers
+    } 
+    // If RIDER, isVerified stays false (Pending Admin)
+
+    const updatedUser = await prisma.user.update({
       where: { id: user.id },
-      data: { isVerified: true },
+      data: updateData,
     });
 
-    // Mark OTP as used
-    await prisma.otp.update({
-      where: { id: otpRecord.id },
-      data: { used: true },
-    });
+    await prisma.otp.update({ where: { id: otpRecord.id }, data: { used: true } });
 
-    return { isVerified: true };
+    // Return the updated status so frontend knows where to go
+    return { 
+        isVerified: updatedUser.isVerified, 
+        role: updatedUser.role 
+    };
   }
-
+  
   // ------------------ FORGOT PASSWORD ------------------
   static async forgotPassword(email: string) {
     const user = await prisma.user.findUnique({ where: { email } });

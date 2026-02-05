@@ -6,7 +6,9 @@ console.log("📧 GMAIL_USER defined:", !!process.env.GMAIL_USER);
 console.log("📧 GMAIL_APP_PASSWORD defined:", !!process.env.GMAIL_APP_PASSWORD);
 
 export const mailer = nodemailer.createTransport({
-  service:"gmail",
+  host: "smtp.gmail.com", // Explicitly set host
+  port: 587,              // Explicitly set the open port
+  secure: false,          // MUST BE FALSE for Port 587
   auth: {
     user: process.env.GMAIL_USER,
     pass: process.env.GMAIL_APP_PASSWORD,
@@ -18,7 +20,7 @@ mailer.verify((error, success) => {
   if (error) {
     console.error("❌ Mailer Connection Error:", error);
   } else {
-    console.log("✅ Mailer Connected Successfully. Ready to send emails.");
+    console.log("✅ Mailer Connected Successfully via Port 587.");
   }
 });
 
@@ -44,9 +46,8 @@ export async function sendEmail({
     console.log(`✅ Email sent successfully! Message ID: ${info.messageId}`);
     return info;
   } catch (error: any) {
-    // 3. Debug: Catch the actual Nodemailer error
     console.error(`❌ FATAL EMAIL ERROR to ${to}:`, error.message);
     if (error.response) console.error("SMTP Response:", error.response);
-    throw error; // Re-throw so the service catches it too
+    throw error;
   }
 }

@@ -7,7 +7,6 @@ console.log("📧 GMAIL_APP_PASSWORD defined:", !!process.env.GMAIL_APP_PASSWORD
 
 export const mailer = nodemailer.createTransport({
   service:"gmail",
-  secure: true,
   auth: {
     user: process.env.GMAIL_USER,
     pass: process.env.GMAIL_APP_PASSWORD,

@@ -1,26 +1,24 @@
 import nodemailer from "nodemailer";
 
-// 1. Debug: Check if Environment Variables exist
-console.log("📧 Initializing Mailer...");
+// 1. Debug Logs
+console.log("📧 Initializing Mailer (Gmail Service Mode)...");
 console.log("📧 GMAIL_USER defined:", !!process.env.GMAIL_USER);
-console.log("📧 GMAIL_APP_PASSWORD defined:", !!process.env.GMAIL_APP_PASSWORD);
 
 export const mailer = nodemailer.createTransport({
-  host: "smtp.gmail.com", // Explicitly set host
-  port: 587,              // Explicitly set the open port
-  secure: false,          // MUST BE FALSE for Port 587
+  service: "gmail",
+  family: 4, // Forces IPv4 (Crucial for Railway)
   auth: {
     user: process.env.GMAIL_USER,
     pass: process.env.GMAIL_APP_PASSWORD,
   },
-});
+} as nodemailer.TransportOptions); // <--- 🛠️ THIS FIXES THE TS ERROR
 
-// 2. Debug: Verify Connection on Startup
+// 2. Verify
 mailer.verify((error, success) => {
   if (error) {
     console.error("❌ Mailer Connection Error:", error);
   } else {
-    console.log("✅ Mailer Connected Successfully via Port 587.");
+    console.log("✅ Mailer Connected Successfully (Gmail/IPv4).");
   }
 });
 
@@ -35,19 +33,16 @@ export async function sendEmail({
 }) {
   try {
     console.log(`📨 Attempting to send email to: ${to}`);
-    
     const info = await mailer.sendMail({
       from: `"ChowEazy" <${process.env.GMAIL_USER}>`,
       to,
       subject,
       html,
     });
-
-    console.log(`✅ Email sent successfully! Message ID: ${info.messageId}`);
+    console.log(`✅ Email sent! ID: ${info.messageId}`);
     return info;
   } catch (error: any) {
-    console.error(`❌ FATAL EMAIL ERROR to ${to}:`, error.message);
-    if (error.response) console.error("SMTP Response:", error.response);
+    console.error(`❌ FATAL EMAIL ERROR:`, error.message);
     throw error;
   }
 }

@@ -29,17 +29,17 @@ export const authMiddleware = async (req: Request, res: Response, next: NextFunc
     // 2. 🛡️ SECURITY CHECK: Does this user actually exist and are they verified?
     const user = await prisma.user.findUnique({
         where: { id: userId },
-        select: { id: true, role: true, email: true, isVerified: true }
+        select: { id: true, role: true, email: true, isVerified: true , isEmailVerified: true}
     });
 
     if (!user) {
         return res.status(401).json({ success: false, message: "User no longer exists." });
     }
 
-    if (!user.isVerified) {
-        return res.status(403).json({ success: false, message: "Account not verified. Please verify OTP." });
+   if (!user.isEmailVerified) {
+        return res.status(403).json({ success: false, message: "Email not verified. Please verify OTP." });
     }
-
+    
     // 3. Attach User to Request
     req.user = {
       id: user.id,

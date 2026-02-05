@@ -161,7 +161,8 @@ model Order {
   paymentStatus   PaymentStatus @default(PENDING)
   
   deliveryAddress String
-  deliveryNotes   String?       
+  deliveryNotes   String? 
+  deliveryPhoneNumber String      
 
   deliveryLatitude  Float?
   deliveryLongitude Float?

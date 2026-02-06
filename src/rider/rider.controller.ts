@@ -1,14 +1,17 @@
 import { Request, Response } from "express";
 import { RiderService } from "./rider.service";
 import { OrderStatus } from "@prisma/client";
+import { success } from "zod";
 
 export class RiderController {
   
   // 1. Get Available Orders
   static async getAvailableOrders(req: Request, res: Response) {
     try {
+      const userId = req.user?.id
+      if(!userId) return res.status(400).json({success: false, message:"Unauthorized"})
       // Typically no input needed, just fetches the pool
-      const orders = await RiderService.getAvailableOrders();
+      const orders = await RiderService.getAvailableOrders(userId);
       return res.status(200).json({ success: true, data: orders });
     } catch (err: any) {
       console.error("Fetch available orders error", err);

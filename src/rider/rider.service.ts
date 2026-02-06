@@ -20,7 +20,37 @@ export class RiderService {
    * 1. Fetch all orders ready for pickup.
    * Includes necessary details for the rider to make a decision (Distance, Fees, Items).
    */
-  static async getAvailableOrders() {
+  /**
+   * 1. Fetch available orders (ONLY if rider is free)
+   */
+  static async getAvailableOrders(riderId: string) {
+    // A. Check if Rider is Busy or Offline
+    // We check two things:
+    // 1. Are they marked "isOnline: false"? (This happens if they toggled off OR accepted an order)
+    // 2. Do they explicitly have an Active Order in the DB? (Safety check)
+    
+    const rider = await prisma.user.findUnique({
+      where: { id: riderId },
+      select: { isOnline: true }
+    });
+
+    if (!rider || !rider.isOnline) {
+       return []; // Return empty list immediately
+    }
+
+    // Safety Check: Ensure no active orders exist (Just in case isOnline got desynced)
+    const activeOrder = await prisma.order.findFirst({
+       where: {
+         riderId: riderId,
+         status: { in: [OrderStatus.RIDER_ACCEPTED, OrderStatus.OUT_FOR_DELIVERY] }
+       }
+    });
+
+    if (activeOrder) {
+      return []; // You are busy working! No new orders for you.
+    }
+
+    // B. If Free, Fetch the Pool
     return prisma.order.findMany({
       where: {
         status: OrderStatus.READY_FOR_PICKUP,
@@ -43,8 +73,8 @@ export class RiderService {
         },
         customer: {
           select: {
-            name: true, // Show first name only maybe? kept full for now
-            address: true, // Use deliveryAddress on order preferably, but user address as fallback
+            name: true,
+            address: true,
           }
         },
         deliveryAddress: true,
@@ -60,8 +90,9 @@ export class RiderService {
       orderBy: { createdAt: 'desc' }
     });
   }
-
+  
   static async getActiveOrder(riderId: string) {
+    
     return prisma.order.findFirst({
       where: {
         riderId: riderId,

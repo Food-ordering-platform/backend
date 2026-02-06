@@ -15,7 +15,6 @@ import { sendPushNotification } from "../utils/notification";
 import { getSocketIO } from "../utils/socket";
 import { calculateDistance, calculateDeliveryFee } from "../utils/haversine";
 import { PRICING } from "../config/pricing";
-import { sendWebPushNotification } from "../utils/web-push";
 import { OrderStateMachine } from "../utils/order-state-machine";
 import { sendPushToRiders } from "../utils/push-notification";
 

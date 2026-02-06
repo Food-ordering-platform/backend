@@ -103,7 +103,7 @@ export class AuthService {
     const token = jwt.sign(
       { userId: user.id, role: user.role },
       process.env.JWT_SECRET as string,
-      { expiresIn: "1hr" }
+      { expiresIn: "7d" }
     );
 
     sendLoginAlertEmail(user.email, user.name)
@@ -159,7 +159,7 @@ export class AuthService {
     const jwtToken = jwt.sign(
       { userId: user.id, role: user.role },
       process.env.JWT_SECRET as string,
-      { expiresIn: "1hr" }
+      { expiresIn: "7d" }
     );
 
     if(user.email) {

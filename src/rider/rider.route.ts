@@ -58,6 +58,9 @@ router.post("/payout", RiderController.requestPayout);
 router.get("/history", RiderController.getHistory);
 
 
+router.patch('/status', authMiddleware, RiderController.updateStatus);
+
+
 
 
 export default router;

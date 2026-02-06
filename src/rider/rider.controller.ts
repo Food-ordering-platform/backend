@@ -168,4 +168,40 @@ static async getHistory(req: Request, res: Response) {
     return res.status(500).json({ success: false, message: err.message });
   }
 }
+
+static async updateStatus(req: Request, res: Response) {
+    try {
+      // 1. Get User ID from the authenticated token
+      const userId = req.user?.id; // Ensure your auth middleware sets this
+
+      if(!userId) return res.status(400).json({success: false, message: "Unauthroized"})
+      
+      // 2. Get status from body (force boolean)
+      const { isOnline } = req.body;
+
+      if (typeof isOnline !== 'boolean') {
+        return res.status(400).json({ 
+          success: false, 
+          message: "isOnline must be a boolean (true/false)" 
+        });
+      }
+
+      // 3. Call Service
+      const updatedUser = await RiderService.updateRiderStatus(userId, isOnline);
+
+      // 4. Send Response
+      return res.status(200).json({
+        success: true,
+        message: isOnline ? "You are now Online 🟢" : "You are now Offline 🔴",
+        data: updatedUser
+      });
+
+    } catch (error) {
+      console.error("Update Status Error:", error);
+      return res.status(500).json({ 
+        success: false, 
+        message: "Failed to update status" 
+      });
+    }
+  }
 }

@@ -517,4 +517,22 @@ static async requestPayout(
       orderBy: { updatedAt: 'desc' }
     });
   }
+
+
+  static async updateRiderStatus(userId: string, isOnline: boolean) {
+
+    // 1. Update the user
+    const updatedUser = await prisma.user.update({
+      where: { id: userId },
+      data: { isOnline: isOnline },
+      select: { 
+        id: true, 
+        name: true, 
+        isOnline: true, 
+        email: true 
+      } // Only return what is needed
+    });
+
+    return updatedUser;
+  }
 }

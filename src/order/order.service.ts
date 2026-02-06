@@ -1,13 +1,23 @@
-import { OrderStatus, PrismaClient, TransactionCategory, TransactionStatus, TransactionType } from "@prisma/client";
+import {
+  OrderStatus,
+  PrismaClient,
+  TransactionCategory,
+  TransactionStatus,
+  TransactionType,
+} from "@prisma/client";
 import { PaymentService } from "../payment/payment.service";
 import { randomBytes } from "crypto";
-import { sendDeliveryCode, sendOrderStatusEmail } from "../utils/email/email.service";
+import {
+  sendDeliveryCode,
+  sendOrderStatusEmail,
+} from "../utils/email/email.service";
 import { sendPushNotification } from "../utils/notification";
 import { getSocketIO } from "../utils/socket";
 import { calculateDistance, calculateDeliveryFee } from "../utils/haversine";
 import { PRICING } from "../config/pricing";
 import { sendWebPushNotification } from "../utils/web-push";
 import { OrderStateMachine } from "../utils/order-state-machine";
+import { sendPushToRiders } from "../utils/push-notification";
 
 const prisma = new PrismaClient();
 
@@ -16,11 +26,13 @@ function generateReference(): string {
 }
 
 export class OrderService {
-  
-   static calculateVendorShare(totalAmount: number, deliveryFee: number): number {
+  static calculateVendorShare(
+    totalAmount: number,
+    deliveryFee: number,
+  ): number {
     const foodRevenue = totalAmount - (deliveryFee + PRICING.PLATFORM_FEE);
-    const vendorShare = foodRevenue * 0.85; 
-    return Math.max(0, vendorShare); 
+    const vendorShare = foodRevenue * 0.85;
+    return Math.max(0, vendorShare);
   }
 
   // ... (getOrderQuote and createOrderWithPayment remain unchanged) ...
@@ -28,7 +40,7 @@ export class OrderService {
     restaurantId: string,
     deliveryLatitude: number,
     deliveryLongitude: number,
-    items: { price: number; quantity: number }[]
+    items: { price: number; quantity: number }[],
   ) {
     const restaurant = await prisma.restaurant.findUnique({
       where: { id: restaurantId },
@@ -43,13 +55,13 @@ export class OrderService {
       restaurant.latitude,
       restaurant.longitude,
       deliveryLatitude,
-      deliveryLongitude
+      deliveryLongitude,
     );
     const deliveryFee = calculateDeliveryFee(distance);
 
     const subtotal = items.reduce(
       (sum, item) => sum + item.price * item.quantity,
-      0
+      0,
     );
 
     const totalAmount = subtotal + deliveryFee + PRICING.PLATFORM_FEE;
@@ -74,7 +86,7 @@ export class OrderService {
     items: { menuItemId: string; quantity: number }[],
     customerName: string,
     customerEmail: string,
-    idempotencyKey?: string
+    idempotencyKey?: string,
   ) {
     if (idempotencyKey) {
       const existingOrder = await prisma.order.findUnique({
@@ -82,7 +94,9 @@ export class OrderService {
       });
 
       if (existingOrder) {
-        console.log(`🛡️ Idempotency Hit: Returning existing order ${existingOrder.reference}`);
+        console.log(
+          `🛡️ Idempotency Hit: Returning existing order ${existingOrder.reference}`,
+        );
         return {
           order: existingOrder,
           checkoutUrl: existingOrder.checkoutUrl,
@@ -108,7 +122,7 @@ export class OrderService {
         restaurant.latitude,
         restaurant.longitude,
         deliveryLatitude,
-        deliveryLongitude
+        deliveryLongitude,
       );
       deliveryFee = calculateDeliveryFee(distance);
     } else {
@@ -152,7 +166,7 @@ export class OrderService {
       finalTotal,
       customerName,
       customerEmail,
-      reference
+      reference,
     );
 
     const deliveryCode = Math.floor(1000 + Math.random() * 9000).toString();
@@ -208,7 +222,7 @@ export class OrderService {
         order.customer.email,
         order.customer.name,
         order.reference, // <--- THE FIX
-        "PENDING"
+        "PENDING",
       ).catch((e) => console.log("Payment success email failed", e));
     }
 
@@ -217,7 +231,7 @@ export class OrderService {
         order.restaurant.owner.pushToken,
         "New Order Paid! 💰",
         `Order #${order.reference.slice(0, 4).toUpperCase()} confirmed. ₦${order.totalAmount}`,
-        { orderId: order.id }
+        { orderId: order.id },
       );
     }
 
@@ -296,9 +310,12 @@ export class OrderService {
     return orders.map((order) => {
       return {
         ...order,
-        riderName:order.riderName,
-        riderPhone:order.riderPhone,
-        vendorFoodTotal: OrderService.calculateVendorShare(order.totalAmount, order.deliveryFee),
+        riderName: order.riderName,
+        riderPhone: order.riderPhone,
+        vendorFoodTotal: OrderService.calculateVendorShare(
+          order.totalAmount,
+          order.deliveryFee,
+        ),
       };
     });
   }
@@ -313,7 +330,10 @@ export class OrderService {
       throw new Error(`Order with ID ${orderId} not found`);
     }
 
-    const vendorShare = OrderService.calculateVendorShare(order.totalAmount, order.deliveryFee);
+    const vendorShare = OrderService.calculateVendorShare(
+      order.totalAmount,
+      order.deliveryFee,
+    );
 
     await prisma.transaction.create({
       data: {
@@ -329,31 +349,33 @@ export class OrderService {
   }
 
   // ✅ UPDATED: Sends delivery code using REAL DB reference
-//
+  //
 
   static async updateOrderStatus(orderId: string, status: OrderStatus) {
     // 1. Fetch Order with all necessary relations (Customer, Restaurant, Items)
     // We need 'items' now to show the rider how many items are in the package
     const order = await prisma.order.findUnique({
       where: { id: orderId },
-      include: { 
-        restaurant: true, 
+      include: {
+        restaurant: true,
         customer: true,
-        items: true 
+        items: true,
       },
     });
-    
+
     if (!order) throw new Error("Order not found");
-    
+
     // 2. Validate Transition
     // This throws an error automatically if invalid, no need for if(!...)
     OrderStateMachine.validateTransition(order.status, status);
 
     let newPaymentStatus = order.paymentStatus;
-    
+
     // 3. Handle Refunds if Cancelled
     if (status === "CANCELLED" && order.paymentStatus === "PAID") {
-      await PaymentService.refund(order.reference).catch(e => console.error("Refund failed", e));
+      await PaymentService.refund(order.reference).catch((e) =>
+        console.error("Refund failed", e),
+      );
       newPaymentStatus = "REFUNDED"; // Ensure this matches your PaymentStatus enum
     }
 
@@ -361,68 +383,59 @@ export class OrderService {
     const updatedOrder = await prisma.order.update({
       where: { id: orderId },
       data: { status, paymentStatus: newPaymentStatus },
-      include: { 
-        customer: true, 
-        restaurant: true, 
-        items: true 
+      include: {
+        customer: true,
+        restaurant: true,
+        items: true,
       },
     });
 
     // 5. 🟢 SOCKET BROADCASTS
     try {
-        const io = getSocketIO();
+      const io = getSocketIO();
 
-        // A. Notify Vendor (Your existing logic)
-        io.to(`restaurant_${order.restaurantId}`).emit("order_updated", { 
-            orderId: order.id,
-            status: status 
-        });
+      // A. Notify Vendor (Your existing logic)
+      io.to(`restaurant_${order.restaurantId}`).emit("order_updated", {
+        orderId: order.id,
+        status: status,
+      });
 
-        // B. Notify Customer (Standard practice so their app updates live)
-        io.to(`order_${orderId}`).emit("order_update", updatedOrder);
+      // B. Notify Customer (Standard practice so their app updates live)
+      io.to(`order_${orderId}`).emit("order_update", updatedOrder);
 
-        // C. 🚀 NEW: Notify Riders if Ready for Pickup
-        if (status === "READY_FOR_PICKUP") {
-            console.log(`📢 Broadcasting Order ${order.reference} to Riders`);
-            
-            io.to("riders_main_feed").emit("new_delivery_available", {
-                type: "NEW_ORDER",
-                order: {
-                    id: updatedOrder.id,
-                    reference: updatedOrder.reference,
-                    restaurantName: updatedOrder.restaurant.name,
-                    restaurantAddress: updatedOrder.restaurant.address,
-                    deliveryAddress: updatedOrder.deliveryAddress,
-                    deliveryFee: updatedOrder.deliveryFee,
-                    totalAmount: updatedOrder.totalAmount,
-                    itemsCount: updatedOrder.items.length,
-                    // Add lat/lng if you have them for distance calculation on frontend
-                    restaurantLat: updatedOrder.restaurant.latitude,
-                    restaurantLng: updatedOrder.restaurant.longitude,
-                    deliveryLat: updatedOrder.deliveryLatitude,
-                    deliveryLng: updatedOrder.deliveryLongitude,
-                }
-            });
-        }
-
+      // C. 🚀 NEW: Notify Riders if Ready for Pickup
+      if (status === "READY_FOR_PICKUP") {
+        console.log(`📢 Broadcasting Order ${order.reference} to Riders`);
+        sendPushToRiders(
+          "New Delivery Alert! 📦",
+          `New order from ${updatedOrder.restaurant.name}. Tap to accept!`,
+          { orderId: updatedOrder.id },
+        ).catch((err) =>
+          console.error("Failed to send rider push notifications:", err),
+        );
+      }
     } catch (e) {
-        console.error("Socket emit failed", e);
+      console.error("Socket emit failed", e);
     }
 
     // 6. Notifications (Your existing logic)
     if (status === "PREPARING") {
-        if (updatedOrder.customer?.pushToken) {
-            sendPushNotification(updatedOrder.customer.pushToken, "Order Accepted!", "The vendor is preparing your food.");
-        }
-        
-        // Send Delivery Code via Email
-        if (updatedOrder.customer?.email && updatedOrder.deliveryCode) {
-            sendDeliveryCode(
-                updatedOrder.customer.email,
-                updatedOrder.deliveryCode,
-                updatedOrder.reference 
-            ).catch(err => console.error("Failed to send delivery code:", err));
-        }
+      if (updatedOrder.customer?.pushToken) {
+        sendPushNotification(
+          updatedOrder.customer.pushToken,
+          "Order Accepted!",
+          "The vendor is preparing your food.",
+        );
+      }
+
+      // Send Delivery Code via Email
+      if (updatedOrder.customer?.email && updatedOrder.deliveryCode) {
+        sendDeliveryCode(
+          updatedOrder.customer.email,
+          updatedOrder.deliveryCode,
+          updatedOrder.reference,
+        ).catch((err) => console.error("Failed to send delivery code:", err));
+      }
     }
 
     // 7. Standard Status Email (Your existing logic)
@@ -430,11 +443,10 @@ export class OrderService {
       sendOrderStatusEmail(
         updatedOrder.customer.email,
         updatedOrder.customer.name,
-        updatedOrder.reference, 
-        status
+        updatedOrder.reference,
+        status,
       );
     }
     return updatedOrder;
   }
-
 }

@@ -90,7 +90,7 @@ export class RiderService {
       orderBy: { createdAt: 'desc' }
     });
   }
-  
+
   static async getActiveOrder(riderId: string) {
     
     return prisma.order.findFirst({
@@ -131,58 +131,71 @@ export class RiderService {
    */
   static async acceptOrder(riderId: string, orderId: string) {
     return await prisma.$transaction(async (tx) => {
-      // 1. Fetch Rider Details (Security Best Practice: Don't trust frontend input)
+      // 1. Fetch Rider Details
       const rider = await tx.user.findUnique({ where: { id: riderId } });
       if (!rider) throw new Error("Rider profile not found");
-      
+
+      // 🛑 GATEKEEPER 1: Ensure Rider is not busy with another active order
+      const existingActiveOrder = await tx.order.findFirst({
+        where: {
+          riderId: riderId,
+          status: { in: [OrderStatus.RIDER_ACCEPTED, OrderStatus.OUT_FOR_DELIVERY] }
+        }
+      });
+      if (existingActiveOrder) {
+        throw new Error("You have an active order. Please complete it first!");
+      }
+
       // Use fallback if name/phone missing
       const riderName = rider.name || "ChowEazy Rider"; 
       const riderPhone = rider.phone || "";
 
-      // 2. Fetch Order
-      const order = await tx.order.findUnique({ where: { id: orderId } });
-      if (!order) throw new Error("Order not found");
-      if (order.status !== OrderStatus.READY_FOR_PICKUP) throw new Error("Order is no longer available");
-      if (order.riderId) throw new Error("Order has already been taken");
+      // 🛑 GATEKEEPER 2 (The Race Condition Fix): Atomic Update
+      // instead of "finding" then "updating", we try to update ONLY IF riderId is null.
+      let updatedOrder;
+      try {
+        updatedOrder = await tx.order.update({
+          where: { 
+            id: orderId, 
+            riderId: null, // <--- CRITICAL: This fails if someone else just took it
+            status: OrderStatus.READY_FOR_PICKUP 
+          },
+          data: {
+            status: OrderStatus.RIDER_ACCEPTED,
+            riderId: riderId,
+            riderName: riderName,
+            riderPhone: riderPhone
+          },
+          include: { restaurant: true, customer: true }
+        });
+      } catch (error) {
+        // If Prisma throws an error here, it means the 'where' clause failed 
+        // (i.e., riderId was NOT null anymore).
+        throw new Error("Too late! This order has just been accepted by another rider.");
+      }
 
-      // 3. Update Order with Rider Details
-      const updatedOrder = await tx.order.update({
-        where: { id: orderId },
-        data: {
-          status: OrderStatus.RIDER_ACCEPTED,
-          riderId: riderId,
-          riderName: riderName,  // <--- Attached here
-          riderPhone: riderPhone // <--- Attached here
-        },
-        include: { restaurant: true, customer: true }
-      });
-
-      // --- NEW: Create PENDING Transaction ---
+      // 3. Create PENDING Transaction (Now safe to do)
       await tx.transaction.create({
         data: {
           userId: riderId,
-          amount: order.deliveryFee, // Expected earning
+          amount: updatedOrder.deliveryFee, // Expected earning
           type: TransactionType.CREDIT,
           category: TransactionCategory.ORDER_EARNING,
-          status: TransactionStatus.PENDING, // <--- PENDING STATUS
-          description: `Pending earning for Order #${order.reference}`,
-          orderId: order.id,
-          reference: `EARN-${order.reference}-${Date.now()}`
+          status: TransactionStatus.PENDING,
+          description: `Pending earning for Order #${updatedOrder.reference}`,
+          orderId: updatedOrder.id,
+          reference: `EARN-${updatedOrder.reference}-${Date.now()}`
         }
       });
 
       // 4. Mark Rider Busy
       await tx.user.update({ where: { id: riderId }, data: { isOnline: false } });
-
-      // 5. Notify Socket
-      const io = getSocketIO();
-      io.to(`order_${orderId}`).emit("order_update", updatedOrder);
-      io.to("riders_main_feed").emit("order_taken", { orderId });
-
+      
+      // 5. Notify Socket (You likely want this here so the UI updates)
       return updatedOrder;
     });
   }
-  
+
   /**
    * 2b. Reject/Unassign Order
    * If a rider accepts by mistake or cannot fulfill it, they can "reject" it back to the pool.

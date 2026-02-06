@@ -26,6 +26,8 @@ export const sendPushToRiders = async (title: string, body: string, data: any = 
         title,
         body,
         data,
+        priority: 'high',
+        channelId: 'delivery-alerts'
       });
     }
 

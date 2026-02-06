@@ -17,7 +17,7 @@ router.get("/me", authMiddleware, AuthController.getMe)
 
 
 //Update profile
-router.put("/profile", authMiddleware, AuthController.updateProfile);
+router.patch("/profile", authMiddleware, AuthController.updateProfile);
 
 // Verify registration OTP
 router.post("/verify-otp", AuthController.verifyOtp);

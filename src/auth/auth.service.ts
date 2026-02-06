@@ -221,7 +221,7 @@ export class AuthService {
         longitude: true,
         role: true,
         isVerified: true,
-        // pushToken: true // Optional: if you want to see it in the response
+        pushToken: true // Optional: if you want to see it in the response
       }
     });
   }

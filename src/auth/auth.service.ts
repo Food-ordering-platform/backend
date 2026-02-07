@@ -59,6 +59,7 @@ export class AuthService {
             role,
             isEmailVerified: false,
             isVerified: false,
+            isOnline: true,
             termsAcceptedAt: termsAcceptedAt,
             address
           },

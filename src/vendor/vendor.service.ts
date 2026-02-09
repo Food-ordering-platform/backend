@@ -73,18 +73,13 @@ export class VendorService {
    * 2. Update Status & Handle Money Flow
    */
   static async updateOrderStatus(
-    userId: string,
     orderId: string,
     status: OrderStatus,
   ) {
     // 1. Verify Ownership (Security Check)
-    const restaurant = await prisma.restaurant.findUnique({
-      where: { ownerId: userId },
-    });
-    if (!restaurant) throw new Error("Restaurant not found");
-
+ 
     const order = await prisma.order.findFirst({
-      where: { id: orderId, restaurantId: restaurant.id },
+      where: { id: orderId },
       include: {
         restaurant: true,
         customer: true,

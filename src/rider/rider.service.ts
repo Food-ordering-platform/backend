@@ -3,6 +3,7 @@ import { PrismaClient, OrderStatus, TransactionType, TransactionCategory, Transa
 import { OrderStateMachine } from "../utils/order-state-machine";
 import { PaymentService } from "../payment/payment.service";
 import { sendPushToRiders } from "../utils/push-notification";
+import { calculateVendorShare } from "../config/pricing";
 
 const prisma = new PrismaClient();
 
@@ -248,6 +249,30 @@ export class RiderService {
         include: { restaurant: true, customer: true }
       });
 
+      // 🟢 USE SHARED LOGIC
+      const vendorShare = calculateVendorShare(
+          Number(updatedOrder.totalAmount), 
+          Number(updatedOrder.deliveryFee)
+      );
+
+      const existingTx = await tx.transaction.findFirst({
+         where: { orderId: updatedOrder.id, category: TransactionCategory.ORDER_EARNING }
+      });
+
+      if (!existingTx) {
+          await tx.transaction.create({
+            data: {
+                userId: updatedOrder.restaurant.ownerId, 
+                amount: vendorShare,
+                type: TransactionType.CREDIT,
+                category: TransactionCategory.ORDER_EARNING,
+                status: TransactionStatus.SUCCESS, 
+                description: `Earnings for Order #${updatedOrder.reference}`,
+                orderId: updatedOrder.id,
+                reference: `EARN-${updatedOrder.reference}-${Date.now()}`
+            }
+          });
+      }
       // If Delivered, mark rider as Online again (Available for new jobs)
       // if (status === OrderStatus.DELIVERED) {
       //    await tx.user.update({ where: { id: riderId }, data: { isOnline: true } });

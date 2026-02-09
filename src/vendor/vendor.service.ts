@@ -13,18 +13,12 @@ import {
 import { sendPushNotification } from "../utils/notification";
 import { PRICING } from "../config/pricing";
 import { RiderService } from "../rider/rider.service";
+import { calculateVendorShare } from "../config/pricing";
 
 const prisma = new PrismaClient();
 
 export class VendorService {
   
-  // --- Helper: Calculate Vendor Share (85% of Food Cost) ---
-  static calculateVendorShare(totalAmount: number, deliveryFee: number): number {
-    const foodRevenue = totalAmount - (deliveryFee + PRICING.PLATFORM_FEE);
-    const vendorShare = foodRevenue * 0.85;
-    return Math.max(0, vendorShare);
-  }
-
   /**
    * 1. Get Vendor Orders (Dashboard)
    */
@@ -57,10 +51,8 @@ export class VendorService {
         ...order,
         riderName: order.riderName,
         riderPhone: order.riderPhone,
-        vendorFoodTotal: this.calculateVendorShare(
-          order.totalAmount,
-          order.deliveryFee,
-        ),
+        vendorFoodTotal: calculateVendorShare(Number(order.totalAmount), Number(order.deliveryFee)),
+        
       };
     });
   }
@@ -104,7 +96,7 @@ export class VendorService {
         });
 
         pendingBalance = activeOrders.reduce((sum, order) => {
-            return sum + this.calculateVendorShare(order.totalAmount, order.deliveryFee);
+            return sum + calculateVendorShare(Number(order.totalAmount), Number(order.deliveryFee));
         }, 0);
     }
 
@@ -163,38 +155,38 @@ export class VendorService {
     // because getVendorEarnings() calculates it from the Order Status.
 
     // B. OUT_FOR_DELIVERY (Rider Picked Up) -> CREATE CREDIT TRANSACTION
-    if (status === "OUT_FOR_DELIVERY") {
+    // if (status === "OUT_FOR_DELIVERY") {
         
-        // Calculate Share
-        const vendorShare = this.calculateVendorShare(
-            order.totalAmount,
-            order.deliveryFee
-        );
+    //     // Calculate Share
+    //     const vendorShare = this.calculateVendorShare(
+    //         order.totalAmount,
+    //         order.deliveryFee
+    //     );
 
-        // Idempotency Check: Ensure we haven't paid them for this order yet
-        const existingTx = await prisma.transaction.findFirst({
-            where: { 
-                orderId: order.id, 
-                category: TransactionCategory.ORDER_EARNING 
-            }
-        });
+    //     // Idempotency Check: Ensure we haven't paid them for this order yet
+    //     const existingTx = await prisma.transaction.findFirst({
+    //         where: { 
+    //             orderId: order.id, 
+    //             category: TransactionCategory.ORDER_EARNING 
+    //         }
+    //     });
 
-        if (!existingTx) {
-            // Create SUCCESS Transaction immediately
-            await prisma.transaction.create({
-                data: {
-                    userId: order.restaurant.ownerId,
-                    amount: vendorShare,
-                    type: TransactionType.CREDIT,
-                    category: TransactionCategory.ORDER_EARNING,
-                    status: TransactionStatus.SUCCESS, // <--- Available immediately upon pickup
-                    description: `Earnings for Order #${order.reference}`,
-                    orderId: order.id,
-                    reference: `EARN-${order.reference}-${Date.now()}`
-                }
-            });
-        }
-    }
+    //     if (!existingTx) {
+    //         // Create SUCCESS Transaction immediately
+    //         await prisma.transaction.create({
+    //             data: {
+    //                 userId: order.restaurant.ownerId,
+    //                 amount: vendorShare,
+    //                 type: TransactionType.CREDIT,
+    //                 category: TransactionCategory.ORDER_EARNING,
+    //                 status: TransactionStatus.SUCCESS, // <--- Available immediately upon pickup
+    //                 description: `Earnings for Order #${order.reference}`,
+    //                 orderId: order.id,
+    //                 reference: `EARN-${order.reference}-${Date.now()}`
+    //             }
+    //         });
+    //     }
+    // }
 
     // C. CANCELLED -> NO ACTION NEEDED
     // Since we never created a transaction, we don't need to mark it FAILED.

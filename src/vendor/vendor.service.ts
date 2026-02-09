@@ -242,4 +242,44 @@ export class VendorService {
 
     return updatedOrder;
   }
+
+  static async requestPayout(userId: string, amount: number, bankDetails: { bankCode: string, accountNumber: string }) {
+    const { availableBalance } = await this.getVendorEarnings(userId);
+
+    if (amount < 100) throw new Error("Minimum withdrawal is ₦100");
+    if (amount > availableBalance) throw new Error("Insufficient funds");
+
+    // 1. Resolve Bank
+    const accountInfo = await PaymentService.resolveAccount(bankDetails.accountNumber, bankDetails.bankCode);
+
+    return await prisma.$transaction(async (tx) => {
+        // 2. Create Pending Debit
+        const transaction = await tx.transaction.create({
+            data: {
+                userId,
+                amount,
+                type: TransactionType.DEBIT,
+                category: TransactionCategory.WITHDRAWAL,
+                status: TransactionStatus.PENDING,
+                description: `Payout to ${accountInfo.account_name}`,
+                reference: `PAYOUT-${Date.now()}`
+            }
+        });
+
+        // 3. Initiate Transfer
+        try {
+            const recipient = await PaymentService.createTransferRecipient(accountInfo.account_name, bankDetails.accountNumber, bankDetails.bankCode);
+            await PaymentService.initiateTransfer(amount, recipient, transaction.reference);
+            // Note: Keep as PENDING until webhook confirms, or mark SUCCESS if instant. 
+            // For now, leaving as PENDING is safer.
+        } catch (e: any) {
+            // If API call fails, revert transaction or mark manual
+            console.error("Payout API failed:", e.message);
+            // Optional: throw to rollback transaction
+            throw new Error(`Payout failed: ${e.message}`);
+        }
+
+        return transaction;
+    });
+  }
 }

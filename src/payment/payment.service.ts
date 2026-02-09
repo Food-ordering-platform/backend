@@ -162,7 +162,7 @@ export class PaymentService {
   static async initiateTransfer(
     amount: number,
     recipientCode: string,
-    reference: string,
+    reference: string | null,
     reason = "Payout",
   ) {
     try {

@@ -11,6 +11,10 @@ router.get("/restaurant/:restaurantId", authMiddleware, VendorController.getVend
 router.patch("/:id/status", authMiddleware, VendorController.updateOrderStatus);
 
 
+// Earnings
+router.get("/earnings", authMiddleware, VendorController.getEarnings);
+router.post("/payout", authMiddleware, VendorController.requestPayout);
+
 
 
 export default router

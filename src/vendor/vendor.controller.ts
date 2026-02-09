@@ -1,29 +1,44 @@
 import { Request, Response } from "express";
 import { VendorService } from "./vendor.service";
-import { OrderStatus } from "@prisma/client";
 
 export class VendorController {
-
   static async getVendorOrders(req: Request, res: Response) {
     try {
-      // Assuming restaurantId is passed in params based on your current frontend
-      // Ideally, use req.user.id to find restaurant internally for security
-      const { restaurantId } = req.params; 
+      const { restaurantId } = req.params;
+      if (!restaurantId) {
+        return res
+          .status(400)
+          .json({ success: false, message: "Restaurant ID is required" });
+      }
       const orders = await VendorService.getVendorOrders(restaurantId);
-      res.json({ success: true, data: orders });
-    } catch (error: any) {
-      res.status(500).json({ success: false, message: error.message });
+      return res.status(200).json({ success: true, data: orders });
+    } catch (err: any) {
+      console.error("Get Vendor orders error", err);
+      return res
+        .status(500)
+        .json({ success: false, message: err.message || "Server Error" });
     }
   }
 
   static async updateOrderStatus(req: Request, res: Response) {
     try {
-      const { orderId } = req.params;
+      const { id } = req.params;
       const { status } = req.body;
-      const result = await VendorService.updateOrderStatus(orderId, status);
-      res.json({ success: true, data: result });
-    } catch (error: any) {
-      res.status(500).json({ success: false, message: error.message });
+      if (!id || !status) {
+        return res
+          .status(400)
+          .json({ success: false, Message: "OrderID and status is required" });
+      }
+      const updateOrder = await VendorService.updateOrderStatus(id, status);
+      return res.status(200).json({ success: true, data: updateOrder });
+    } catch (err: any) {
+      console.error("Update order status error", err);
+      const statusCode = err.message.includes("Invalid State Transition")
+        ? 400
+        : 500;
+      return res
+        .status(statusCode)
+        .json({ success: false, message: err.message || "Server Error" });
     }
   }
 

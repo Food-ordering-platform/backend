@@ -35,7 +35,8 @@ export class AuthService {
             name: name,
             phone: phone, 
             address: address,
-            role: role // Update role in case they changed it
+            role: role, // Update role in case they changed it
+            isOnline: role === "RIDER" ? true: false
           }
         });
         
@@ -59,7 +60,7 @@ export class AuthService {
             role,
             isEmailVerified: false,
             isVerified: false,
-            isOnline: true,
+            isOnline: role === "RIDER" ? true : false,
             termsAcceptedAt: termsAcceptedAt,
             address
           },

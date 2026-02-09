@@ -235,56 +235,64 @@ export class RiderService {
   }
 
   // ---> NEW METHOD: Handle Pickup & Delivery <---
+  // src/rider/rider.service.ts
+
   static async comfirmPickup(riderId: string, orderId: string, status: OrderStatus) {
     return await prisma.$transaction(async (tx) => {
-      const order = await tx.order.findUnique({ where: { id: orderId } });
+      const order = await tx.order.findUnique({ 
+          where: { id: orderId },
+          include: { restaurant: true } 
+      });
       
       if (!order) throw new Error("Order not found");
       if (order.riderId !== riderId) throw new Error("Unauthorized");
 
-      // Update the status
+      // 1. Update Order Status
       const updatedOrder = await tx.order.update({
         where: { id: orderId },
         data: { status: OrderStatus.OUT_FOR_DELIVERY },
         include: { restaurant: true, customer: true }
       });
 
-      // 🟢 USE SHARED LOGIC
+      // 2. Calculate Share
       const vendorShare = calculateVendorShare(
           Number(updatedOrder.totalAmount), 
           Number(updatedOrder.deliveryFee)
       );
 
+      // 3. Handle Transaction (Create OR Update)
       const existingTx = await tx.transaction.findFirst({
          where: { orderId: updatedOrder.id, category: TransactionCategory.ORDER_EARNING }
       });
 
-      if (!existingTx) {
+      if (existingTx) {
+          // 🚨 THE FIX: If it exists but is stuck in PENDING, release it!
+          if (existingTx.status !== TransactionStatus.SUCCESS) {
+             await tx.transaction.update({
+                 where: { id: existingTx.id },
+                 data: { status: TransactionStatus.SUCCESS, amount: vendorShare }
+             });
+          }
+      } else {
+          // Create NEW Success Transaction
           await tx.transaction.create({
             data: {
                 userId: updatedOrder.restaurant.ownerId, 
                 amount: vendorShare,
                 type: TransactionType.CREDIT,
                 category: TransactionCategory.ORDER_EARNING,
-                status: TransactionStatus.SUCCESS, 
+                status: TransactionStatus.SUCCESS, // Available immediately
                 description: `Earnings for Order #${updatedOrder.reference}`,
                 orderId: updatedOrder.id,
                 reference: `EARN-${updatedOrder.reference}-${Date.now()}`
             }
           });
       }
-      // If Delivered, mark rider as Online again (Available for new jobs)
-      // if (status === OrderStatus.DELIVERED) {
-      //    await tx.user.update({ where: { id: riderId }, data: { isOnline: true } });
-      // }
 
-      // Notify Customer
-      
-      
       return updatedOrder;
     });
   }
-
+  
 
   static async confirmDelivery(riderId: string, orderId: string, code: string) {
     return await prisma.$transaction(async (tx) => {

@@ -31,11 +31,11 @@ export class VendorService {
   /**
    * 1. Get Vendor Orders (Dashboard)
    */
-  static async getVendorOrders(userId: string) {
+  static async getVendorOrders(restaurantId: string) {
     // Changed to userId for security
     // Find Restaurant First
     const restaurant = await prisma.restaurant.findUnique({
-      where: { ownerId: userId },
+      where: { ownerId: restaurantId },
       select: { id: true },
     });
 

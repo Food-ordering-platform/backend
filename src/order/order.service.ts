@@ -12,7 +12,6 @@ import {
   sendOrderStatusEmail,
 } from "../utils/email/email.service";
 import { sendPushNotification } from "../utils/notification";
-import { getSocketIO } from "../utils/socket";
 import { calculateDistance, calculateDeliveryFee } from "../utils/haversine";
 import { PRICING } from "../config/pricing";
 import { OrderStateMachine } from "../utils/order-state-machine";
@@ -233,18 +232,6 @@ export class OrderService {
         { orderId: order.id },
       );
     }
-
-    try {
-      const io = getSocketIO();
-      io.to(`restaurant_${order.restaurantId}`).emit("new_order", {
-        message: "New Order Paid! 🔔",
-        orderId: order.id,
-        totalAmount: order.totalAmount,
-      });
-    } catch (error) {
-      console.log("Socket emit failed", error);
-    }
-
     return updatedOrder;
   }
 
@@ -296,156 +283,128 @@ export class OrderService {
     });
   }
 
-  static async getVendorOrders(restaurantId: string) {
-    const orders = await prisma.order.findMany({
-      where: { restaurantId, paymentStatus: { in: ["PAID", "REFUNDED"] } },
-      include: {
-        items: true,
-        customer: { select: { name: true, phone: true, address: true } },
-      },
-      orderBy: { createdAt: "desc" },
-    });
+  // static async getVendorOrders(restaurantId: string) {
+  //   const orders = await prisma.order.findMany({
+  //     where: { restaurantId, paymentStatus: { in: ["PAID", "REFUNDED"] } },
+  //     include: {
+  //       items: true,
+  //       customer: { select: { name: true, phone: true, address: true } },
+  //     },
+  //     orderBy: { createdAt: "desc" },
+  //   });
 
-    return orders.map((order) => {
-      return {
-        ...order,
-        riderName: order.riderName,
-        riderPhone: order.riderPhone,
-        vendorFoodTotal: OrderService.calculateVendorShare(
-          order.totalAmount,
-          order.deliveryFee,
-        ),
-      };
-    });
-  }
+  //   return orders.map((order) => {
+  //     return {
+  //       ...order,
+  //       riderName: order.riderName,
+  //       riderPhone: order.riderPhone,
+  //       vendorFoodTotal: OrderService.calculateVendorShare(
+  //         order.totalAmount,
+  //         order.deliveryFee,
+  //       ),
+  //     };
+  //   });
+  // }
 
-  static async distributeVendorEarnings(orderId: string) {
-    const order = await prisma.order.findUnique({
-      where: { id: orderId },
-      include: { restaurant: true },
-    });
+  // static async distributeVendorEarnings(orderId: string) {
+  //   const order = await prisma.order.findUnique({
+  //     where: { id: orderId },
+  //     include: { restaurant: true },
+  //   });
 
-    if (!order) {
-      throw new Error(`Order with ID ${orderId} not found`);
-    }
+  //   if (!order) {
+  //     throw new Error(`Order with ID ${orderId} not found`);
+  //   }
 
-    const vendorShare = OrderService.calculateVendorShare(
-      order.totalAmount,
-      order.deliveryFee,
-    );
+  //   const vendorShare = OrderService.calculateVendorShare(
+  //     order.totalAmount,
+  //     order.deliveryFee,
+  //   );
 
-    await prisma.transaction.create({
-      data: {
-        userId: order.restaurant.ownerId,
-        amount: vendorShare,
-        type: "CREDIT",
-        category: "ORDER_EARNING",
-        status: "SUCCESS",
-        orderId: order.id,
-        description: `Earnings for Order #${order.reference}`,
-      },
-    });
-  }
+  //   await prisma.transaction.create({
+  //     data: {
+  //       userId: order.restaurant.ownerId,
+  //       amount: vendorShare,
+  //       type: "CREDIT",
+  //       category: "ORDER_EARNING",
+  //       status: "SUCCESS",
+  //       orderId: order.id,
+  //       description: `Earnings for Order #${order.reference}`,
+  //     },
+  //   });
+  // }
 
   // ✅ UPDATED: Sends delivery code using REAL DB reference
   //
 
-  static async updateOrderStatus(orderId: string, status: OrderStatus) {
-    // 1. Fetch Order with all necessary relations (Customer, Restaurant, Items)
-    // We need 'items' now to show the rider how many items are in the package
-    const order = await prisma.order.findUnique({
-      where: { id: orderId },
-      include: {
-        restaurant: true,
-        customer: true,
-        items: true,
-      },
-    });
+  // static async updateOrderStatus(orderId: string, status: OrderStatus) {
+  //   // 1. Fetch Order with all necessary relations (Customer, Restaurant, Items)
+  //   // We need 'items' now to show the rider how many items are in the package
+  //   const order = await prisma.order.findUnique({
+  //     where: { id: orderId },
+  //     include: {
+  //       restaurant: true,
+  //       customer: true,
+  //       items: true,
+  //     },
+  //   });
 
-    if (!order) throw new Error("Order not found");
+  //   if (!order) throw new Error("Order not found");
 
-    // 2. Validate Transition
-    // This throws an error automatically if invalid, no need for if(!...)
-    OrderStateMachine.validateTransition(order.status, status);
+  //   // 2. Validate Transition
+  //   // This throws an error automatically if invalid, no need for if(!...)
+  //   OrderStateMachine.validateTransition(order.status, status);
 
-    let newPaymentStatus = order.paymentStatus;
+  //   let newPaymentStatus = order.paymentStatus;
 
-    // 3. Handle Refunds if Cancelled
-    if (status === "CANCELLED" && order.paymentStatus === "PAID") {
-      await PaymentService.refund(order.reference).catch((e) =>
-        console.error("Refund failed", e),
-      );
-      newPaymentStatus = "REFUNDED"; // Ensure this matches your PaymentStatus enum
-    }
+  //   // 3. Handle Refunds if Cancelled
+  //   if (status === "CANCELLED" && order.paymentStatus === "PAID") {
+  //     await PaymentService.refund(order.reference).catch((e) =>
+  //       console.error("Refund failed", e),
+  //     );
+  //     newPaymentStatus = "REFUNDED"; // Ensure this matches your PaymentStatus enum
+  //   }
 
-    // 4. Update Database
-    const updatedOrder = await prisma.order.update({
-      where: { id: orderId },
-      data: { status, paymentStatus: newPaymentStatus },
-      include: {
-        customer: true,
-        restaurant: true,
-        items: true,
-      },
-    });
+  //   // 4. Update Database
+  //   const updatedOrder = await prisma.order.update({
+  //     where: { id: orderId },
+  //     data: { status, paymentStatus: newPaymentStatus },
+  //     include: {
+  //       customer: true,
+  //       restaurant: true,
+  //       items: true,
+  //     },
+  //   });
 
-    // 5. 🟢 SOCKET BROADCASTS
-    try {
-      const io = getSocketIO();
+  //   // 5. Notifications (Your existing logic)
+  //   if (status === "PREPARING") {
+  //     if (updatedOrder.customer?.pushToken) {
+  //       sendPushNotification(
+  //         updatedOrder.customer.pushToken,
+  //         "Order Accepted!",
+  //         "The vendor is preparing your food.",
+  //       );
+  //     }
 
-      // A. Notify Vendor (Your existing logic)
-      io.to(`restaurant_${order.restaurantId}`).emit("order_updated", {
-        orderId: order.id,
-        status: status,
-      });
+  //     // Send Delivery Code via Email
+  //     if (updatedOrder.customer?.email && updatedOrder.deliveryCode) {
+  //       sendDeliveryCode(
+  //         updatedOrder.customer.email,
+  //         updatedOrder.deliveryCode,
+  //         updatedOrder.reference,
+  //       ).catch((err) => console.error("Failed to send delivery code:", err));
+  //     }
+  //   }
 
-      // B. Notify Customer (Standard practice so their app updates live)
-      io.to(`order_${orderId}`).emit("order_update", updatedOrder);
-
-      // C. 🚀 NEW: Notify Riders if Ready for Pickup
-      if (status === "READY_FOR_PICKUP") {
-        console.log(`📢 Broadcasting Order ${order.reference} to Riders`);
-        sendPushToRiders(
-          "New Delivery Alert! 📦",
-          `New order from ${updatedOrder.restaurant.name}. Tap to accept!`,
-          { orderId: updatedOrder.id },
-        ).catch((err) =>
-          console.error("Failed to send rider push notifications:", err),
-        );
-      }
-    } catch (e) {
-      console.error("Socket emit failed", e);
-    }
-
-    // 6. Notifications (Your existing logic)
-    if (status === "PREPARING") {
-      if (updatedOrder.customer?.pushToken) {
-        sendPushNotification(
-          updatedOrder.customer.pushToken,
-          "Order Accepted!",
-          "The vendor is preparing your food.",
-        );
-      }
-
-      // Send Delivery Code via Email
-      if (updatedOrder.customer?.email && updatedOrder.deliveryCode) {
-        sendDeliveryCode(
-          updatedOrder.customer.email,
-          updatedOrder.deliveryCode,
-          updatedOrder.reference,
-        ).catch((err) => console.error("Failed to send delivery code:", err));
-      }
-    }
-
-    // 7. Standard Status Email (Your existing logic)
-    if (updatedOrder.customer?.email) {
-      sendOrderStatusEmail(
-        updatedOrder.customer.email,
-        updatedOrder.customer.name,
-        updatedOrder.reference,
-        status,
-      );
-    }
-    return updatedOrder;
-  }
+  //   // 7. Standard Status Email (Your existing logic)
+  //   if (updatedOrder.customer?.email) {
+  //     sendOrderStatusEmail(
+  //       updatedOrder.customer.email,
+  //       updatedOrder.customer.name,
+  //       updatedOrder.reference,
+  //       status,
+  //     );
+  //   }
+  //   return updatedOrder;
+  // }
 }

@@ -12,6 +12,7 @@ import orderRouter from "./order/order.routes";
 import paymentRouter from "./payment/payment.route";
 import adminRouter from "./admin/admin.route";
 import riderRoutes from "./rider/rider.route";
+import vendorRoutes from "./vendor/vendor.route"
 
 const app = express();
 
@@ -59,6 +60,7 @@ app.use("/api/orders", orderRouter);
 app.use("/api/payment", paymentRouter);
 app.use("/api/admin", adminRouter);
 app.use("/api/rider", riderRoutes);
+app.use("/api/vendor", vendorRoutes)
 
 // 6. Global Error Handler
 app.use(

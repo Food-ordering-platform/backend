@@ -20,10 +20,10 @@ router.get("/customer/:customerId", authMiddleware, OrderController.getAllOrders
 router.get("/single/:reference", authMiddleware, OrderController.getSingleOrder);
 
 // 5. Vendor Dashboard (Strictly Private)
-router.get("/restaurant/:restaurantId", authMiddleware, OrderController.getVendorOrders);
+// router.get("/restaurant/:restaurantId", authMiddleware, OrderController.getVendorOrders);
 
 // 6. Update Status (CRITICAL SECURITY - Only Riders/Vendors)
-router.patch("/:id/status", authMiddleware, OrderController.updateOrderStatus);
+// router.patch("/:id/status", authMiddleware, OrderController.updateOrderStatus);
 
 
 

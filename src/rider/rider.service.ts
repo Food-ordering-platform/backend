@@ -1,5 +1,5 @@
 import { PrismaClient, OrderStatus, TransactionType, TransactionCategory, TransactionStatus } from "@prisma/client";
-import { getSocketIO } from "../utils/socket";
+
 import { OrderStateMachine } from "../utils/order-state-machine";
 import { PaymentService } from "../payment/payment.service";
 import { sendPushToRiders } from "../utils/push-notification";
@@ -228,19 +228,6 @@ export class RiderService {
       // Notify System
       console.log(`⚠️ Rider ${riderId} rejected Order ${order.reference}. Reason: ${reason}`);
 
-      // Re-broadcast to all riders
-      const io = getSocketIO();
-      io.to("riders_main_feed").emit("new_delivery_available", {
-          type: "ORDER_RETURNED_TO_POOL",
-          order: {
-              id: updatedOrder.id,
-              reference: updatedOrder.reference,
-              restaurantName: updatedOrder.restaurant.name,
-              // ... include other necessary fields for the feed
-          }
-      });
-      
-      io.to(`order_${orderId}`).emit("order_update", updatedOrder); // Notify Customer status change
 
       return updatedOrder;
     });
@@ -267,8 +254,7 @@ export class RiderService {
       // }
 
       // Notify Customer
-      const io = getSocketIO();
-      io.to(`order_${orderId}`).emit("order_update", updatedOrder);
+      
       
       return updatedOrder;
     });
@@ -322,8 +308,7 @@ export class RiderService {
       });
 
       // 5. Notify Customer & Socket
-      const io = getSocketIO();
-      io.to(`order_${orderId}`).emit("order_update", updatedOrder);
+      
       
       return updatedOrder;
     });

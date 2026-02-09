@@ -35,7 +35,7 @@ export class VendorService {
     // Changed to userId for security
     // Find Restaurant First
     const restaurant = await prisma.restaurant.findUnique({
-      where: { ownerId: restaurantId },
+      where: { id:restaurantId },
       select: { id: true },
     });
 

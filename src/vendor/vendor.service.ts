@@ -18,7 +18,7 @@ import { calculateVendorShare } from "../config/pricing";
 const prisma = new PrismaClient();
 
 export class VendorService {
-  
+
   /**
    * 1. Get Vendor Orders (Dashboard)
    */
@@ -52,7 +52,7 @@ export class VendorService {
         riderName: order.riderName,
         riderPhone: order.riderPhone,
         vendorFoodTotal: calculateVendorShare(Number(order.totalAmount), Number(order.deliveryFee)),
-        
+
       };
     });
   }
@@ -82,27 +82,33 @@ export class VendorService {
     // We calculate this "On the Fly". It is NOT in the transaction table yet.
     // Logic: Any order that is NOT yet picked up, but is valid.
     const restaurant = await prisma.restaurant.findUnique({ where: { ownerId: userId } });
-    
+
     let pendingBalance = 0;
 
     if (restaurant) {
-        const activeOrders = await prisma.order.findMany({
-            where: {
-                restaurantId: restaurant.id,
-                // Statuses where the vendor has accepted but rider hasn't picked up/delivered yet
-                status: { in: ['PREPARING', 'READY_FOR_PICKUP', 'RIDER_ACCEPTED'] },
-                paymentStatus: 'PAID'
-            }
-        });
+      const activeOrders = await prisma.order.findMany({
+        where: {
+          restaurantId: restaurant.id,
+          // 🟡 Pending money = orders the kitchen has accepted but NOT yet marked "Food Ready"
+          status: { in: ["PREPARING"] },
+          paymentStatus: "PAID",
+        },
+      });
 
-        pendingBalance = activeOrders.reduce((sum, order) => {
-            return sum + calculateVendorShare(Number(order.totalAmount), Number(order.deliveryFee));
-        }, 0);
+      pendingBalance = activeOrders.reduce((sum, order) => {
+        return (
+          sum +
+          calculateVendorShare(
+            Number(order.totalAmount),
+            Number(order.deliveryFee),
+          )
+        );
+      }, 0);
     }
 
     return {
       availableBalance,
-      pendingBalance, 
+      pendingBalance,
       totalEarnings: totalCredits,
       withdrawn: totalDebits,
       transactions
@@ -113,7 +119,7 @@ export class VendorService {
    * 3. Update Status & Handle Money Flow
    */
   static async updateOrderStatus(orderId: string, status: OrderStatus) {
-    
+
     const order = await prisma.order.findFirst({
       where: { id: orderId },
       include: {
@@ -156,7 +162,7 @@ export class VendorService {
 
     // B. OUT_FOR_DELIVERY (Rider Picked Up) -> CREATE CREDIT TRANSACTION
     // if (status === "OUT_FOR_DELIVERY") {
-        
+
     //     // Calculate Share
     //     const vendorShare = this.calculateVendorShare(
     //         order.totalAmount,
@@ -188,6 +194,42 @@ export class VendorService {
     //     }
     // }
 
+    // B. READY_FOR_PICKUP (Food Ready & Rider Called) -> CREATE CREDIT TRANSACTION
+    //
+    // Business rule:
+    // - When the vendor taps "Food Ready - Request Rider" in the dashboard,
+    //   the order status becomes READY_FOR_PICKUP.
+    // - At that exact moment, we move money from PENDING to AVAILABLE.
+    if (status === "READY_FOR_PICKUP" && updatedOrder.paymentStatus === "PAID") {
+      const vendorShare = calculateVendorShare(
+        Number(updatedOrder.totalAmount),
+        Number(updatedOrder.deliveryFee),
+      );
+
+      // Idempotency check: ensure we only credit once per order
+      const existingTx = await prisma.transaction.findFirst({
+        where: {
+          orderId: updatedOrder.id,
+          category: TransactionCategory.ORDER_EARNING,
+        },
+      });
+
+      if (!existingTx && vendorShare > 0) {
+        await prisma.transaction.create({
+          data: {
+            userId: updatedOrder.restaurant.ownerId,
+            amount: vendorShare,
+            type: TransactionType.CREDIT,
+            category: TransactionCategory.ORDER_EARNING,
+            status: TransactionStatus.SUCCESS, // immediately withdrawable
+            description: `Earnings for Order #${updatedOrder.reference}`,
+            orderId: updatedOrder.id,
+            reference: `EARN-${updatedOrder.reference}-${Date.now()}`,
+          },
+        });
+      }
+    }
+
     // C. CANCELLED -> NO ACTION NEEDED
     // Since we never created a transaction, we don't need to mark it FAILED.
     // The Pending Balance will automatically drop because the order status is now CANCELLED 
@@ -199,8 +241,8 @@ export class VendorService {
 
     // 1. Notify Rider Service if Ready
     if (status === "READY_FOR_PICKUP") {
-       RiderService.notifyRidersOfNewOrder(updatedOrder.id)
-         .catch(err => console.error("Failed to notify riders", err));
+      RiderService.notifyRidersOfNewOrder(updatedOrder.id)
+        .catch(err => console.error("Failed to notify riders", err));
     }
 
     // 2. Standard Notifications (Email/Push to Customer)
@@ -245,33 +287,33 @@ export class VendorService {
     const accountInfo = await PaymentService.resolveAccount(bankDetails.accountNumber, bankDetails.bankCode);
 
     return await prisma.$transaction(async (tx) => {
-        // 2. Create Pending Debit
-        const transaction = await tx.transaction.create({
-            data: {
-                userId,
-                amount,
-                type: TransactionType.DEBIT,
-                category: TransactionCategory.WITHDRAWAL,
-                status: TransactionStatus.PENDING,
-                description: `Payout to ${accountInfo.account_name}`,
-                reference: `PAYOUT-${Date.now()}`
-            }
-        });
-
-        // 3. Initiate Transfer
-        try {
-            const recipient = await PaymentService.createTransferRecipient(accountInfo.account_name, bankDetails.accountNumber, bankDetails.bankCode);
-            await PaymentService.initiateTransfer(amount, recipient, transaction.reference);
-            // Note: Keep as PENDING until webhook confirms, or mark SUCCESS if instant. 
-            // For now, leaving as PENDING is safer.
-        } catch (e: any) {
-            // If API call fails, revert transaction or mark manual
-            console.error("Payout API failed:", e.message);
-            // Optional: throw to rollback transaction
-            throw new Error(`Payout failed: ${e.message}`);
+      // 2. Create Pending Debit
+      const transaction = await tx.transaction.create({
+        data: {
+          userId,
+          amount,
+          type: TransactionType.DEBIT,
+          category: TransactionCategory.WITHDRAWAL,
+          status: TransactionStatus.PENDING,
+          description: `Payout to ${accountInfo.account_name}`,
+          reference: `PAYOUT-${Date.now()}`
         }
+      });
 
-        return transaction;
+      // 3. Initiate Transfer
+      try {
+        const recipient = await PaymentService.createTransferRecipient(accountInfo.account_name, bankDetails.accountNumber, bankDetails.bankCode);
+        await PaymentService.initiateTransfer(amount, recipient, transaction.reference);
+        // Note: Keep as PENDING until webhook confirms, or mark SUCCESS if instant. 
+        // For now, leaving as PENDING is safer.
+      } catch (e: any) {
+        // If API call fails, revert transaction or mark manual
+        console.error("Payout API failed:", e.message);
+        // Optional: throw to rollback transaction
+        throw new Error(`Payout failed: ${e.message}`);
+      }
+
+      return transaction;
     });
   }
 }

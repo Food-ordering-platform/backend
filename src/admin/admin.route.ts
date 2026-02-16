@@ -10,11 +10,14 @@ const adminCheck = (req: any, res: any, next: any) => {
   next();
 };
 
+// Withdrawals management
 router.get("/withdrawals", authMiddleware, adminCheck, async (req, res) => {
   try {
     const withdrawals = await AdminService.getPendingWithdrawals();
     res.json({ success: true, data: withdrawals });
-  } catch (e: any) { res.status(500).json({ error: e.message }); }
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 router.post("/withdrawals/:id", authMiddleware, adminCheck, async (req, res) => {
@@ -22,7 +25,20 @@ router.post("/withdrawals/:id", authMiddleware, adminCheck, async (req, res) => 
     const { action } = req.body; // "APPROVE" or "REJECT"
     const result = await AdminService.processWithdrawal(req.params.id, action);
     res.json({ success: true, data: result });
-  } catch (e: any) { res.status(400).json({ error: e.message }); }
+  } catch (e: any) {
+    res.status(400).json({ error: e.message });
+  }
+});
+
+// Rider approval
+router.post("/riders/:id/approve", authMiddleware, adminCheck, async (req, res) => {
+  try {
+    const riderId = req.params.id;
+    const rider = await AdminService.approveRider(riderId);
+    res.json({ success: true, data: rider });
+  } catch (e: any) {
+    res.status(400).json({ success: false, message: e.message });
+  }
 });
 
 export default router;

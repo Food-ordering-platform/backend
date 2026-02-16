@@ -2,7 +2,7 @@
 
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
-import {OAuth2Client} from "google-auth-library"
+import { OAuth2Client } from "google-auth-library"
 import { randomInt } from "crypto";
 import jwt from "jsonwebtoken";
 import dayjs from "dayjs";
@@ -13,12 +13,12 @@ const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID)
 
 export class AuthService {
   // ------------------ REGISTER ------------------
- static async registerUser(
+  static async registerUser(
     name: string,
     email: string,
     password: string,
-    phone: string, 
-    role: "CUSTOMER" | "VENDOR" |  "RIDER"  = "CUSTOMER",
+    phone: string,
+    role: "CUSTOMER" | "VENDOR" | "RIDER" = "CUSTOMER",
     termsAcceptedAt: Date,
     address?: string
   ) {
@@ -31,15 +31,16 @@ export class AuthService {
         const updatedUser = await prisma.user.update({
           where: { id: existingUser.id },
           data: {
-            termsAcceptedAt: termsAcceptedAt, 
+            termsAcceptedAt: termsAcceptedAt,
             name: name,
-            phone: phone, 
+            phone: phone,
             address: address,
             role: role, // Update role in case they changed it
-            isOnline: role === "RIDER" ? true: false
+            // Riders should NOT be auto-online until they explicitly toggle
+            isOnline: role === "RIDER" ? false : false
           }
         });
-        
+
         const code = await this.generateOtp(updatedUser.id);
         await sendOtPEmail(updatedUser.email, code);
 
@@ -51,34 +52,35 @@ export class AuthService {
     const hashedPassword = await bcrypt.hash(password, 10);
 
     const result = await prisma.$transaction(async (tx) => {
-        const user = await tx.user.create({
-          data: {
-            name,
-            email,
-            password: hashedPassword,
-            phone,
-            role,
-            isEmailVerified: false,
-            isVerified: false,
-            isOnline: role === "RIDER" ? true : false,
-            termsAcceptedAt: termsAcceptedAt,
-            address
-          },
-        });
+      const user = await tx.user.create({
+        data: {
+          name,
+          email,
+          password: hashedPassword,
+          phone,
+          role,
+          isEmailVerified: false,
+          isVerified: false,
+          // Rider starts offline; admin approval + toggle controls availability
+          isOnline: role === "RIDER" ? false : false,
+          termsAcceptedAt: termsAcceptedAt,
+          address
+        },
+      });
 
-        return user;
+      return user;
     });
 
     const code = await this.generateOtp(result.id);
 
     sendOtPEmail(result.email, code).catch(err => console.error("Failed to send OTP email:", err));
 
-    return { user: result};
+    return { user: result };
   }
 
   // ------------------ LOGIN ------------------
   static async login(email: string, password: string) {
-    const user = await prisma.user.findUnique({ where: {email}, include:{restaurant: true}});
+    const user = await prisma.user.findUnique({ where: { email }, include: { restaurant: true } });
     if (!user) throw new Error("We couldn't find an account with that email.");
 
     if (!user.password) throw new Error("Invalid credentials. Did you sign up with Google?");
@@ -92,13 +94,13 @@ export class AuthService {
       const tempToken = jwt.sign(
         { userId: user.id, role: user.role },
         process.env.JWT_SECRET as string,
-        { expiresIn: "30m" } 
+        { expiresIn: "30m" }
       );
 
-      return { 
+      return {
         requireOtp: true,
         token: tempToken,
-        user 
+        user
       };
     }
 
@@ -132,7 +134,7 @@ export class AuthService {
 
     // 🛑 BLOCKER: If user doesn't exist AND they didn't accept terms (via Signup page)
     if (!user && !termsAccepted) {
-        throw new Error("Account not found. Please use the Sign Up page to create an account.");
+      throw new Error("Account not found. Please use the Sign Up page to create an account.");
     }
 
     if (!user) {
@@ -143,7 +145,7 @@ export class AuthService {
           name: name || "Google User",
           googleId,
           avatar: picture,
-          isEmailVerified: true, 
+          isEmailVerified: true,
           role: "CUSTOMER",
           termsAcceptedAt: new Date(), // <--- SAVING THE DATE
         },
@@ -164,8 +166,8 @@ export class AuthService {
       { expiresIn: "7d" }
     );
 
-    if(user.email) {
-       sendLoginAlertEmail(user.email, user.name)
+    if (user.email) {
+      sendLoginAlertEmail(user.email, user.name)
     }
 
     return { token: jwtToken, user };
@@ -173,21 +175,21 @@ export class AuthService {
 
   static async getMe(userId: string) {
     const user = await prisma.user.findUnique({
-      where:{id:userId},
-      select:{
+      where: { id: userId },
+      select: {
         id: true,
-        name:true,
-        email:true,
-        role:true,
-        isVerified:true,
-        latitude: true,  
+        name: true,
+        email: true,
+        role: true,
+        isVerified: true,
+        latitude: true,
         longitude: true,
         address: true, // Make sure address is returned
-        phone:true,
+        phone: true,
         restaurant: true
       }
     })
-    if (!user){
+    if (!user) {
       throw new Error("User session not found. Please login again.")
     }
     return user;
@@ -195,11 +197,11 @@ export class AuthService {
 
   // src/auth/auth.service.ts
 
-  static async updateProfile(userId: string, data: { 
-    name?: string; 
-    phone?: string; 
-    address?: string; 
-    latitude?: number; 
+  static async updateProfile(userId: string, data: {
+    name?: string;
+    phone?: string;
+    address?: string;
+    latitude?: number;
     longitude?: number;
     pushToken?: string; // <--- 1. Add Type Here
   }) {
@@ -214,12 +216,12 @@ export class AuthService {
         pushToken: data.pushToken, // <--- 2. Add Field Here
       },
       select: {
-        id: true, 
-        name: true, 
-        email: true, 
-        phone: true, 
-        address: true, 
-        latitude: true, 
+        id: true,
+        name: true,
+        email: true,
+        phone: true,
+        address: true,
+        latitude: true,
         longitude: true,
         role: true,
         isVerified: true,
@@ -228,7 +230,7 @@ export class AuthService {
     });
   }
 
-  
+
   // ------------------ OTP UTILS ------------------
   static async generateOtp(userId: string) {
     const code = randomInt(100000, 999999).toString();
@@ -248,19 +250,19 @@ export class AuthService {
     const otpRecord = await prisma.otp.findFirst({
       where: { userId: user.id, code, used: false, expiresAt: { gt: new Date() } },
     });
-    if (!otpRecord) throw new Error ("Invalid or expired OTP");
+    if (!otpRecord) throw new Error("Invalid or expired OTP");
 
     // 🟢 NEW LOGIC: 
     // 1. Mark Email as Verified (Allows Login)
     // 2. Only Auto-Approve CUSTOMERS. Riders remain Pending.
-    
-    const updateData: any = { 
-        isEmailVerified: true 
+
+    const updateData: any = {
+      isEmailVerified: true
     };
 
     if (user.role === 'CUSTOMER') {
-        updateData.isVerified = true; // Auto-verify customers
-    } 
+      updateData.isVerified = true; // Auto-verify customers
+    }
     // If RIDER, isVerified stays false (Pending Admin)
 
     const updatedUser = await prisma.user.update({
@@ -271,21 +273,21 @@ export class AuthService {
     await prisma.otp.update({ where: { id: otpRecord.id }, data: { used: true } });
 
     // Return the updated status so frontend knows where to go
-    return { 
-        isVerified: updatedUser.isVerified, 
-        role: updatedUser.role 
+    return {
+      isVerified: updatedUser.isVerified,
+      role: updatedUser.role
     };
   }
-  
+
   // ------------------ FORGOT PASSWORD ------------------
   static async forgotPassword(email: string) {
     const user = await prisma.user.findUnique({ where: { email } });
     if (!user) {
-      throw new Error("We sent an OTP if this email exists."); 
+      throw new Error("We sent an OTP if this email exists.");
     }
 
     const code = randomInt(100000, 999999).toString();
-    const expiresAt = dayjs().add(30, "minute").toDate(); 
+    const expiresAt = dayjs().add(30, "minute").toDate();
 
     await prisma.otp.create({
       data: { code, userId: user.id, expiresAt },
@@ -296,12 +298,12 @@ export class AuthService {
     const token = jwt.sign(
       { userId: user.id, purpose: "RESET_PASSWORD" },
       process.env.JWT_SECRET as string,
-      { expiresIn: "24h" } 
+      { expiresIn: "24h" }
     );
 
     return { message: "OTP sent to email", token };
   }
-  
+
   static async verifyForgotPasswordOtp(token: string, code: string) {
     try {
       const payload = jwt.verify(token, process.env.JWT_SECRET as string) as { userId: string; purpose: string };

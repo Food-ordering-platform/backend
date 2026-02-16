@@ -10,9 +10,10 @@ export const sendPushToRiders = async (title: string, body: string, data: any = 
     // 1. Get all riders
     const riders = await prisma.user.findMany({
       where: {
-        role: 'RIDER', // <--- CHECK 1: Are you actually a RIDER in the DB?
+        role: 'RIDER',                 // Must be a rider
+        isVerified: true,              // ✅ Only approved riders
         pushToken: { not: null },
-        isOnline: true
+        isOnline: true,                // And currently online
       },
       select: { id: true, name: true, pushToken: true } // Select name for debugging
     });
@@ -43,26 +44,26 @@ export const sendPushToRiders = async (title: string, body: string, data: any = 
 
     // 2. Send chunks and LOG THE RESULT
     const chunks = expo.chunkPushNotifications(messages as any);
-    
+
     for (const chunk of chunks) {
       try {
         const ticketChunk = await expo.sendPushNotificationsAsync(chunk);
-        
+
         // 🔍 LOG EXPO RESPONSE
         console.log("🎫 Expo Ticket Response:", JSON.stringify(ticketChunk));
-        
+
         // Check for errors in the tickets
         ticketChunk.forEach((ticket: any) => {
-             if (ticket.status === 'error') {
-                 console.error(`🔴 Expo Error: ${ticket.message} (${ticket.details?.error})`);
-                 // If error is 'DeviceNotRegistered', the token is dead.
-             } else {
-                 
-             }
+          if (ticket.status === 'error') {
+            console.error(`🔴 Expo Error: ${ticket.message} (${ticket.details?.error})`);
+            // If error is 'DeviceNotRegistered', the token is dead.
+          } else {
+
+          }
         });
 
       } catch (error) {
-        
+
       }
     }
   } catch (error) {

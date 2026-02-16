@@ -1,12 +1,12 @@
-import { PrismaClient, TransactionStatus } from "@prisma/client";
+import { PrismaClient, TransactionStatus, Role } from "@prisma/client";
 const prisma = new PrismaClient();
 
 export class AdminService {
   static async getPendingWithdrawals() {
     return prisma.transaction.findMany({
-      where: { 
-        category: "WITHDRAWAL", 
-        status: "PENDING" 
+      where: {
+        category: "WITHDRAWAL",
+        status: "PENDING"
       },
       include: {
         user: { select: { name: true, email: true, phone: true } }
@@ -27,10 +27,49 @@ export class AdminService {
     // getEarnings() calculates (Credits - Debits). 
     // However, for strict accounting, we usually create a "REFUND" credit or just mark this debit as FAILED.
     // In your logic, marking it FAILED removes it from the "Total Debit" sum, refunding the user.
-    
+
     return prisma.transaction.update({
       where: { id: transactionId },
       data: { status: newStatus }
     });
+  }
+
+  /**
+   * Approve a rider account.
+   * - Sets isVerified = true (admin approval)
+   * - Sets isOnline  = true so they immediately start receiving jobs
+   */
+  static async approveRider(userId: string) {
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    if (!user) {
+      throw new Error("User not found");
+    }
+
+    if (user.role !== "RIDER") {
+      throw new Error("User is not a rider");
+    }
+
+    if (!user.isEmailVerified) {
+      throw new Error("Rider email not verified yet");
+    }
+
+    // Mark rider as approved and online by default
+    const updated = await prisma.user.update({
+      where: { id: userId },
+      data: {
+        isVerified: true,
+        isOnline: true,
+      },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: true,
+        isVerified: true,
+        isOnline: true,
+      },
+    });
+
+    return updated;
   }
 }

@@ -59,6 +59,9 @@ Omnichannel delivery across:
 ```
 
 ```
+```
+
+│   
 ├── prisma/
 │   ├── migrations/               # Auto-generated migration history
 │   ├── schema.prisma             # Database schema & relationships
@@ -119,8 +122,7 @@ Omnichannel delivery across:
 │   │   └── prisma.ts             # Prisma client singleton
 │   │
 │   ├── app.ts                    # Express setup, CORS & middlewares
-│   └── index.ts                  # HTTP server entry point
-├── 
+│   └── index.ts                  # HTTP/WebSocket server entry point
 ├── package.json                  # Dependencies and scripts
 └── tsconfig.json                 # TypeScript compiler configuration
 ```

@@ -214,9 +214,6 @@ npm start
 
 ---
 
-## 🧪 Testing & CI/CD
-
-This project uses **Jest** and **Supertest** for automated testing.
 
 ---
 

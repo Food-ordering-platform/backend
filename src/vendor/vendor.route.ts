@@ -8,7 +8,11 @@ const router = Router();
 router.get("/restaurant/:restaurantId", authMiddleware, VendorController.getVendorOrders);
 
 //2.Update order status
-router.patch("/:id/status", authMiddleware, VendorController.updateOrderStatus);
+
+router.get("/transactions", authMiddleware, VendorController.getTransactions);
+router.patch("/order/:id/accept", authMiddleware, VendorController.acceptOrder);
+router.patch("/order/:id/request-rider", authMiddleware, VendorController.requestRider);
+router.patch("/order/:id/cancel", authMiddleware, VendorController.cancelOrder);
 
 
 // Earnings

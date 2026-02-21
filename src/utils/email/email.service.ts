@@ -60,13 +60,14 @@ export async function sendLoginAlertEmail(email: string, name: string) {
 }
 
 // --- ORDER STATUS EMAIL ---
+// --- ORDER STATUS EMAIL ---
 export async function sendOrderStatusEmail(
   email: string,
   name: string,
   orderReference: string,
   status: string
 ) {
-  console.log(`[EmailService] Preparing Order Status (${status}) for: ${email}`); // <--- LOG
+  console.log(`[EmailService] Preparing Order Status (${status}) for: ${email}`);
   try {
     const displayRef = orderReference.toUpperCase();
 
@@ -89,25 +90,28 @@ export async function sendOrderStatusEmail(
 
       case "READY_FOR_PICKUP":
         title = "Food is Ready";
-        message = `Your order <b>#${displayRef}</b> is packed and ready. A rider will be notified shortly.`;
+        message = `Your order <b>#${displayRef}</b> is packed and ready at the restaurant. We are assigning a rider right now.`;
         emoji = "🛍️";
         break;
 
+      // ✅ 1. Rider has accepted the order
       case "RIDER_ACCEPTED":
-        title = "Food is Ready";
-        message = `Your order <b>#${displayRef}</b> has been accepted by a rider and will soon be out for delivery.`;
-        emoji = "🛍️";
+        title = "Rider Assigned 🛵";
+        message = `Good news! A rider has accepted your order <b>#${displayRef}</b> and is heading to the restaurant to pick it up.`;
+        emoji = "🛵";
         break;
 
+      // ✅ 2. Rider has picked up the food from the vendor
       case "OUT_FOR_DELIVERY":
-        title = "Rider is on the way";
-        message = `Your food is on the move! Order <b>#${displayRef}</b> is heading to you.`;
+        title = "Out for Delivery 🚴";
+        message = `Your rider has picked up your food from the restaurant! Order <b>#${displayRef}</b> is now on its way to your location.`;
         emoji = "🚴";
         break;
 
+      // ✅ 3. Order has been delivered to the customer
       case "DELIVERED":
-        title = "Order Delivered";
-        message = `Enjoy your meal <b>${name}</b>! Order <b>#${displayRef}</b> has been delivered.`;
+        title = "Order Delivered 🎉";
+        message = `Yay! Your order <b>#${displayRef}</b> has been delivered successfully. Enjoy your meal, <b>${name}</b>!`;
         emoji = "😋";
         break;
 
@@ -119,7 +123,7 @@ export async function sendOrderStatusEmail(
 
       case "REFUNDED":
         title = "Refund Processed";
-        message = `We’ve processed a refund for order <b>#${displayRef}</b>. It should reflect shortly.`;
+        message = `We’ve processed a refund for order <b>#${displayRef}</b>. It should reflect in your account shortly.`;
         emoji = "💸";
         break;
 

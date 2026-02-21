@@ -16,7 +16,6 @@ import { RiderService } from "../rider/rider.service";
 import { calculateVendorShare } from "../config/pricing";
 import { payoutSchema } from "../restuarant/restaurant.validator";
 
-
 const prisma = new PrismaClient();
 
 export class VendorService {
@@ -60,7 +59,7 @@ export class VendorService {
   }
 
   /**
-   * 2. Get Vendor Earnings (Bug Fixed: No more double counting)
+   * 2. Get Vendor Earnings
    */
   static async getVendorEarnings(userId: string) {
     const transactions = await prisma.transaction.findMany({
@@ -89,7 +88,6 @@ export class VendorService {
       const activeOrders = await prisma.order.findMany({
         where: {
           restaurantId: restaurant.id,
-          // ✅ BUG FIX: Pending money ONLY includes orders currently PREPARING.
           status: { in: ["PREPARING"] }, 
           paymentStatus: "PAID",
         },
@@ -112,25 +110,23 @@ export class VendorService {
   }
 
   /**
-   * 3. Get Vendor Transactions (Moved from RestaurantService)
+   * 3. Get Vendor Transactions
    */
   static async getTransactions(userId: string) {
     return await prisma.transaction.findMany({
       where: { userId },
       orderBy: { createdAt: "desc" },
-      take: 50, // Limit to the last 50 for performance
+      take: 50,
     });
   }
 
   /**
-   * 4. Request Payout (Merged with Zod Validation & Admin Alert)
+   * 4. Request Payout
    */
   static async requestPayout(userId: string, amount: number, bankDetails: any) {
-    // 1. Validation
     const validData = payoutSchema.parse({ amount, bankDetails });
-
-    // 2. Check Balance
     const { availableBalance } = await this.getVendorEarnings(userId);
+    
     if (validData.amount < 100) throw new Error("Minimum withdrawal is ₦100");
     if (validData.amount > availableBalance) {
       throw new Error(`Insufficient funds. Available: ₦${availableBalance.toLocaleString()}`);
@@ -143,14 +139,12 @@ export class VendorService {
 
     if (!restaurant) throw new Error("Restaurant Not Found");
 
-    // 3. Resolve Bank
     const accountInfo = await PaymentService.resolveAccount(
       validData.bankDetails.accountNumber,
       validData.bankDetails.bankName
     );
 
     return await prisma.$transaction(async (tx) => {
-      // 4. Create Pending Debit
       const transaction = await tx.transaction.create({
         data: {
           userId,
@@ -163,7 +157,6 @@ export class VendorService {
         },
       });
 
-      // 5. Initiate Transfer
       try {
         const recipient = await PaymentService.createTransferRecipient(
           accountInfo.account_name,
@@ -176,111 +169,134 @@ export class VendorService {
         throw new Error(`Payout failed: ${e.message}`);
       }
 
-      // 6. 🔔 Notify Admin (From your old RestaurantService)
       sendAdminPayoutAlert(restaurant.name, validData.amount, validData.bankDetails);
-
       return transaction;
     });
   }
 
+  // =========================================================================
+  // 🚀 REFACTORED VENDOR ORDER ACTIONS (Replacing updateOrderStatus)
+  // =========================================================================
+
   /**
-   * 5. Update Status & Handle Money Flow (Atomic Transaction Bug Fix Applied)
+   * Action A: Accept Order (Kitchen starts cooking)
+   * Changes status from PENDING -> PREPARING
    */
-  static async updateOrderStatus(orderId: string, status: OrderStatus) {
-    const order = await prisma.order.findFirst({
+  static async acceptOrder(vendorId: string, orderId: string) {
+    const order = await prisma.order.findUnique({
       where: { id: orderId },
-      include: {
-        restaurant: true,
-        customer: true,
-        items: true,
-      },
+      include: { restaurant: true, customer: true },
     });
 
     if (!order) throw new Error("Order not found");
+    if (order.restaurant.ownerId !== vendorId) throw new Error("Unauthorized to access this order");
+    if (order.status !== "PENDING") throw new Error("Order has already been processed");
 
-    let newPaymentStatus = order.paymentStatus;
+    const updatedOrder = await prisma.order.update({
+      where: { id: orderId },
+      data: { status: OrderStatus.PREPARING },
+      include: { customer: true },
+    });
 
-    if (status === "CANCELLED" && order.paymentStatus === "PAID") {
-      await PaymentService.refund(order.reference).catch((e) =>
-        console.error("Refund failed", e)
-      );
-      newPaymentStatus = "REFUNDED";
+    // 📡 Notifications
+    if (updatedOrder.customer?.pushToken) {
+      sendPushNotification(updatedOrder.customer.pushToken, "Order Accepted!", "The vendor is preparing your food.");
+    }
+    if (updatedOrder.customer?.email && updatedOrder.deliveryCode) {
+      sendDeliveryCode(updatedOrder.customer.email, updatedOrder.deliveryCode, updatedOrder.reference).catch(e => console.error(e));
+    }
+    if (updatedOrder.customer?.email) {
+      sendOrderStatusEmail(updatedOrder.customer.email, updatedOrder.customer.name, updatedOrder.reference, OrderStatus.PREPARING);
     }
 
-    // ✅ BUG FIX: Atomic Transaction for status update + money credit
+    return updatedOrder;
+  }
+
+  /**
+   * Action B: Request Rider (Food is Ready)
+   * Changes status from PREPARING -> READY_FOR_PICKUP and creates Vendor Earning Record
+   */
+  static async requestRider(vendorId: string, orderId: string) {
+    const order = await prisma.order.findUnique({
+      where: { id: orderId },
+      include: { restaurant: true },
+    });
+
+    if (!order) throw new Error("Order not found");
+    if (order.restaurant.ownerId !== vendorId) throw new Error("Unauthorized");
+    if (order.status !== "PREPARING") throw new Error("Order must be preparing before it can be marked ready");
+
+    // Atomic Transaction to update status AND log the earnings
     const updatedOrder = await prisma.$transaction(async (tx) => {
       const updated = await tx.order.update({
         where: { id: orderId },
-        data: { status, paymentStatus: newPaymentStatus },
-        include: {
-          customer: true,
-          restaurant: true,
-          items: true,
-        },
+        data: { status: OrderStatus.READY_FOR_PICKUP },
+        include: { restaurant: true, customer: true },
       });
 
-      if (status === "READY_FOR_PICKUP" && updated.paymentStatus === "PAID") {
-        const vendorShare = calculateVendorShare(
-          Number(updated.totalAmount),
-          Number(updated.deliveryFee)
-        );
+      const vendorShare = calculateVendorShare(Number(updated.totalAmount), Number(updated.deliveryFee));
+      
+      const existingTx = await tx.transaction.findFirst({
+        where: { orderId: updated.id, category: TransactionCategory.ORDER_EARNING },
+      });
 
-        const existingTx = await tx.transaction.findFirst({
-          where: {
-            orderId: updated.id,
+      if (!existingTx && vendorShare > 0) {
+        await tx.transaction.create({
+          data: {
+            userId: updated.restaurant.ownerId,
+            amount: vendorShare,
+            type: TransactionType.CREDIT,
             category: TransactionCategory.ORDER_EARNING,
+            status: TransactionStatus.SUCCESS,
+            description: `Earnings for Order #${updated.reference}`,
+            orderId: updated.id,
+            reference: `EARN-${updated.reference}-${Date.now()}`,
           },
         });
-
-        if (!existingTx && vendorShare > 0) {
-          await tx.transaction.create({
-            data: {
-              userId: updated.restaurant.ownerId,
-              amount: vendorShare,
-              type: TransactionType.CREDIT,
-              category: TransactionCategory.ORDER_EARNING,
-              status: TransactionStatus.SUCCESS,
-              description: `Earnings for Order #${updated.reference}`,
-              orderId: updated.id,
-              reference: `EARN-${updated.reference}-${Date.now()}`,
-            },
-          });
-        }
       }
       return updated;
     });
 
-    // 📡 NOTIFICATIONS (Outside the transaction)
-    if (status === "READY_FOR_PICKUP") {
-      RiderService.notifyRidersOfNewOrder(updatedOrder.id).catch((err) =>
-        console.error("Failed to notify riders", err)
-      );
-    }
-
-    if (status === "PREPARING") {
-      if (updatedOrder.customer?.pushToken) {
-        sendPushNotification(
-          updatedOrder.customer.pushToken,
-          "Order Accepted!",
-          "The vendor is preparing your food."
-        );
-      }
-      if (updatedOrder.customer?.email && updatedOrder.deliveryCode) {
-        sendDeliveryCode(
-          updatedOrder.customer.email,
-          updatedOrder.deliveryCode,
-          updatedOrder.reference
-        ).catch((err: any) => console.error("Failed to send delivery code:", err));
-      }
-    }
-
+    // 📡 Notifications
+    RiderService.notifyRidersOfNewOrder(updatedOrder.id).catch(e => console.error("Rider push failed", e));
+    
     if (updatedOrder.customer?.email) {
-      sendOrderStatusEmail(
-        updatedOrder.customer.email,
-        updatedOrder.customer.name,
-        updatedOrder.reference,
-        status
-      );
+      sendOrderStatusEmail(updatedOrder.customer.email, updatedOrder.customer.name, updatedOrder.reference, OrderStatus.READY_FOR_PICKUP);
+    }
+
+    return updatedOrder;
+  }
+
+  /**
+   * Action C: Cancel Order (Vendor unable to fulfill)
+   * Changes status to CANCELLED and handles refund
+   */
+  static async cancelOrder(vendorId: string, orderId: string) {
+    const order = await prisma.order.findUnique({
+      where: { id: orderId },
+      include: { restaurant: true, customer: true },
+    });
+
+    if (!order) throw new Error("Order not found");
+    if (order.restaurant.ownerId !== vendorId) throw new Error("Unauthorized");
+    if (["DELIVERED", "OUT_FOR_DELIVERY"].includes(order.status)) throw new Error("Cannot cancel an order that is already on the way");
+
+    let newPaymentStatus = order.paymentStatus;
+
+    if (order.paymentStatus === "PAID") {
+      await PaymentService.refund(order.reference).catch((e) => console.error("Refund failed", e));
+      newPaymentStatus = "REFUNDED";
+    }
+
+    const updatedOrder = await prisma.order.update({
+      where: { id: orderId },
+      data: { status: OrderStatus.CANCELLED, paymentStatus: newPaymentStatus },
+      include: { customer: true },
+    });
+
+    // 📡 Notifications
+    if (updatedOrder.customer?.email) {
+      sendOrderStatusEmail(updatedOrder.customer.email, updatedOrder.customer.name, updatedOrder.reference, OrderStatus.CANCELLED);
     }
 
     return updatedOrder;

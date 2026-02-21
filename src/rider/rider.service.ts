@@ -4,6 +4,7 @@ import { OrderStateMachine } from "../utils/order-state-machine";
 import { PaymentService } from "../payment/payment.service";
 import { sendPushToRiders } from "../utils/push-notification";
 import { calculateVendorShare } from "../config/pricing";
+import { sendOrderStatusEmail } from "../utils/email/email.service";
 
 const prisma = new PrismaClient();
 
@@ -175,22 +176,16 @@ export class RiderService {
         throw new Error("Too late! This order has just been accepted by another rider.");
       }
 
-      // 3. Create PENDING Transaction (Now safe to do)
-      await tx.transaction.create({
-        data: {
-          userId: riderId,
-          amount: updatedOrder.deliveryFee, // Expected earning
-          type: TransactionType.CREDIT,
-          category: TransactionCategory.ORDER_EARNING,
-          status: TransactionStatus.PENDING,
-          description: `Pending earning for Order #${updatedOrder.reference}`,
-          orderId: updatedOrder.id,
-          reference: `EARN-${updatedOrder.reference}-${Date.now()}`
-        }
-      });
-
       // 4. Mark Rider Busy
       await tx.user.update({ where: { id: riderId }, data: { isOnline: false } });
+      if (updatedOrder.customer?.email) {
+        sendOrderStatusEmail(
+          updatedOrder.customer.email,
+          updatedOrder.customer.name,
+          updatedOrder.reference,
+          OrderStatus.RIDER_ACCEPTED
+        ).catch(e => console.error("Failed to send rider accepted email", e));
+      }
       
       // 5. Notify Socket (You likely want this here so the UI updates)
       return updatedOrder;
@@ -288,6 +283,14 @@ export class RiderService {
             }
           });
       }
+      if (updatedOrder.customer?.email) {
+        sendOrderStatusEmail(
+          updatedOrder.customer.email,
+          updatedOrder.customer.name,
+          updatedOrder.reference,
+          OrderStatus.OUT_FOR_DELIVERY
+        ).catch(e => console.error("Failed to send out for delivery email", e));
+      }
 
       return updatedOrder;
     });
@@ -340,7 +343,15 @@ export class RiderService {
         data: { isOnline: true } 
       });
 
-      // 5. Notify Customer & Socket
+      // 5. Notify Customer
+      if (updatedOrder.customer?.email) {
+        sendOrderStatusEmail(
+          updatedOrder.customer.email,
+          updatedOrder.customer.name,
+          updatedOrder.reference,
+          OrderStatus.DELIVERED
+        ).catch(e => console.error("Failed to send delivered email", e));
+      }
       
       
       return updatedOrder;

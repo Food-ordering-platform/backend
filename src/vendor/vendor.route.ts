@@ -5,7 +5,7 @@ import { VendorController } from "./vendor.controller";
 const router = Router();
 
 //1.Get vendor orders
-router.get("/restaurant/:restaurantId", authMiddleware, VendorController.getVendorOrders);
+router.get("/vendor/:vendorId/orders", authMiddleware, VendorController.getVendorOrders);
 
 //2.Update order status
 

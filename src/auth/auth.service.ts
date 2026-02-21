@@ -36,7 +36,6 @@ export class AuthService {
             phone: phone,
             address: address,
             role: role, // Update role in case they changed it
-            // Riders should NOT be auto-online until they explicitly toggle
             isOnline: role === "RIDER" ? false : false
           }
         });
@@ -195,7 +194,6 @@ export class AuthService {
     return user;
   }
 
-  // src/auth/auth.service.ts
 
   static async updateProfile(userId: string, data: {
     name?: string;
@@ -355,24 +353,4 @@ export class AuthService {
     });
   }
 
-  static async subscribeWebPush(userId: string, subscription: any) {
-    if (!subscription || !subscription.endpoint || !subscription.keys) {
-      throw new Error("Invalid subscription data");
-    }
-
-    return await prisma.webPushSubscription.upsert({
-      where: { endpoint: subscription.endpoint },
-      update: {
-        userId,
-        p256dh: subscription.keys.p256dh,
-        auth: subscription.keys.auth,
-      },
-      create: {
-        userId,
-        endpoint: subscription.endpoint,
-        p256dh: subscription.keys.p256dh,
-        auth: subscription.keys.auth,
-      },
-    });
-  }
 }

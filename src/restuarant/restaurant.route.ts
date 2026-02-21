@@ -30,16 +30,4 @@ router.delete("/menu/:id", authMiddleware, RestaurantController.deleteMenuItem);
 // 6. Toggle Availability (Stock)
 router.patch("/menu/:id/toggle", authMiddleware, RestaurantController.toggleMenuItemAvailability);
 
-// 7. View Earnings (Strictly Private)
-router.get("/:id/earnings", authMiddleware, RestaurantController.getEarnings);
-
-//8. View Recent Transactions
-router.get("/:id/transactions", authMiddleware, RestaurantController.getTransactions)
-
-//9. Withdraw Money
-// [FIXED] Route name changed to match frontend service call (/payout)
-router.post("/:id/payout", authMiddleware, RestaurantController.requestPayout);
-
-
-
 export default router;

@@ -2,6 +2,7 @@ import { Request, Response } from "express";
 import { VendorService } from "./vendor.service";
 
 export class VendorController {
+  // 1. Orders Management
   static async getVendorOrders(req: Request, res: Response) {
     try {
       const { restaurantId } = req.params;
@@ -22,7 +23,7 @@ export class VendorController {
 
   static async updateOrderStatus(req: Request, res: Response) {
     try {
-      const { id } = req.params;
+      const { id } = req.params; // Order ID
       const { status } = req.body;
       if (!id || !status) {
         return res
@@ -42,9 +43,10 @@ export class VendorController {
     }
   }
 
+  // 2. Financials & Wallet (Secure: Uses req.user!.id from Auth Middleware)
   static async getEarnings(req: Request, res: Response) {
     try {
-      const userId = req.user!.id; // Needs Auth Middleware
+      const userId = req.user!.id; 
       const data = await VendorService.getVendorEarnings(userId);
       res.json({ success: true, data });
     } catch (error: any) {
@@ -52,10 +54,28 @@ export class VendorController {
     }
   }
 
+  static async getTransactions(req: Request, res: Response) {
+    try {
+      const userId = req.user!.id;
+      const transactions = await VendorService.getTransactions(userId);
+      return res.status(200).json({ success: true, data: transactions });
+    } catch (err: any) {
+      return res.status(400).json({ success: false, message: err.message });
+    }
+  }
+
   static async requestPayout(req: Request, res: Response) {
     try {
       const userId = req.user!.id;
       const { amount, bankDetails } = req.body;
+
+      if (!amount) {
+        return res.status(400).json({ success: false, message: "Amount is required" });
+      }
+      if (!bankDetails) {
+        return res.status(400).json({ success: false, message: "Invalid Bank Details" });
+      }
+
       const result = await VendorService.requestPayout(userId, Number(amount), bankDetails);
       res.json({ success: true, data: result });
     } catch (error: any) {

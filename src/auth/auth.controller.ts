@@ -183,25 +183,5 @@ export class AuthController {
     }
   }
 
-  //WEB PUSH  NOTIFICATION
-  static subscribeWebPush = async (
-    req: Request,
-    res: Response,
-    next: NextFunction,
-  ) => {
-    try {
-      const { subscription } = req.body;
-      const userId = req.user?.id;
 
-      if (!userId) {
-        return res.status(401).json({ message: "Unauthorized" });
-      }
-
-      await AuthService.subscribeWebPush(userId, subscription);
-
-      res.status(200).json({ message: "Web push subscribed successfully" });
-    } catch (error) {
-      next(error);
-    }
-  };
 }

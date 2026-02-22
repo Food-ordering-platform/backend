@@ -5,17 +5,17 @@ import session from "express-session";
 import pgSession from "connect-pg-simple";
 import { Pool } from "pg";
 import compression from "compression"
+import { setupSwagger } from './swagger';
 
 import authRouter from "./auth/auth.route";
 import restaurantRouter from "./restuarant/restaurant.route";
-import orderRouter from "./order/order.routes";
+import orderRouter from "./order/order.route";
 import paymentRouter from "./payment/payment.route";
 import adminRouter from "./admin/admin.route";
-import riderRoutes from "./rider/rider.route";
+import riderRoute from "./rider/rider.route";
 import vendorRoutes from "./vendor/vendor.route"
 
 const app = express();
-
 
 app.set("trust proxy", 1) //Tells express to trust the load balancer
 // 1. Setup Session Store (Postgres)
@@ -40,6 +40,7 @@ app.use(
   })
 );
 app.use(morgan("dev"));
+setupSwagger(app)
 
 // 3. JSON Parsing (Skip for Webhooks)
 app.use(express.json({
@@ -59,7 +60,7 @@ app.use("/api/restaurant", restaurantRouter);
 app.use("/api/orders", orderRouter);
 app.use("/api/payment", paymentRouter);
 app.use("/api/admin", adminRouter);
-app.use("/api/rider", riderRoutes);
+app.use("/api/rider", riderRoute);
 app.use("/api/vendor", vendorRoutes)
 
 // 6. Global Error Handler

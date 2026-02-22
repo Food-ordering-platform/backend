@@ -185,7 +185,6 @@ JWT_SECRET="your_super_secret_jwt_key"
 
 # Payments (e.g., Paystack/Flutterwave)
 PAYMENT_SECRET_KEY="your_payment_provider_secret"
-PAYMENT_WEBHOOK_SECRET="your_webhook_signature_secret"
 
 # Cloudinary
 CLOUDINARY_CLOUD_NAME="your_cloud_name"

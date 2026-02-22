@@ -126,8 +126,23 @@ Omnichannel delivery across:
 ├── package.json                  # Dependencies and scripts
 └── tsconfig.json                 # TypeScript compiler configuration
 ```
-
 ---
+### **3️⃣ Optional: Make it more detailed**
+You can show modules/services like:
+
+```mermaid
+flowchart TD
+    Customer --> API[API Gateway]
+    Vendor --> API
+    Rider --> API
+    API --> Auth[Auth Service]
+    API --> Orders[Order Service]
+    API --> Payments[Payment Service]
+    API --> Notifications[Notification Service]
+    Auth --> DB[(PostgreSQL)]
+    Orders --> DB
+    Payments --> DB
+```
 
 ## 🚀 Getting Started
 

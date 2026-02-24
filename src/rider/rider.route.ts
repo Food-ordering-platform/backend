@@ -150,65 +150,7 @@ router.get("/orders/active", RiderController.getActiveOrder);
  */
 router.patch("/orders/:id/accept", RiderController.acceptOrder);
 
-/**
- * @swagger
- * /rider/orders/{id}/reject:
- *   patch:
- *     summary: Reject or unassign an accepted order
- *     description: |
- *       Returns the order to the available pool (`READY_FOR_PICKUP`) and clears the rider assignment.
- *       Can only be called while the order is still in `RIDER_ACCEPTED` status — not after pickup.
- *     tags: [Riders]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: string
- *         description: The order ID
- *         example: clxyz999xyz
- *     requestBody:
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               reason:
- *                 type: string
- *                 description: Optional reason for rejection (logged server-side)
- *                 example: Too far from my location
- *     responses:
- *       200:
- *         description: Order rejected and returned to the pool
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                   example: true
- *                 message:
- *                   type: string
- *                   example: Order rejected/unassigned
- *                 data:
- *                   type: object
- *       400:
- *         description: Not assigned to this order, or order is past the rejection stage
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/Error'
- *       401:
- *         description: Unauthorized
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/Error'
- */
-router.patch("/orders/:id/reject", RiderController.rejectOrder);
+
 
 /**
  * @swagger

@@ -33,16 +33,16 @@ export class VendorController {
     }
   }
 
-  static async requestPayout(req: Request, res: Response) {
-    try {
-      const userId = req.user!.id;
-      const { amount, bankDetails } = req.body;
-      const result = await VendorService.requestPayout(userId, Number(amount), bankDetails);
-      res.json({ success: true, data: result });
-    } catch (error: any) {
-      res.status(400).json({ success: false, message: error.message });
-    }
-  }
+  // static async requestPayout(req: Request, res: Response) {
+  //   try {
+  //     const userId = req.user!.id;
+  //     const { amount, bankDetails } = req.body;
+  //     const result = await VendorService.requestPayout(userId, Number(amount), bankDetails);
+  //     res.json({ success: true, data: result });
+  //   } catch (error: any) {
+  //     res.status(400).json({ success: false, message: error.message });
+  //   }
+  // }
 
   // ==========================================
   // 🚀 NEW ORDER ACTION ROUTES

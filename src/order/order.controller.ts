@@ -153,17 +153,5 @@ export class OrderController {
 
 
   // Add inside OrderController class
-static async rateOrder(req: Request, res: Response) {
-  try {
-    const { id } = req.params; // Order ID
-    const { rating, comment } = req.body;
-    
-    if (!req.user) throw new Error("Unauthorized");    
-    const review = await RestaurantService.addReview(req.user.id, id, rating, comment);
-    
-    return res.status(200).json({ success: true, data: review });
-  } catch (err: any) {
-    return res.status(400).json({ success: false, message: err.message });
-  }
-}
+
 }

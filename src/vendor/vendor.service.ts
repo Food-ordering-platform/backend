@@ -15,6 +15,7 @@ import { sendPushNotification } from "../utils/notification";
 import { RiderService } from "../rider/rider.service";
 import { calculateVendorShare } from "../config/pricing";
 import { payoutSchema } from "../restuarant/restaurant.validator";
+import { OrderStateMachine } from "../utils/order-state-machine";
 
 const prisma = new PrismaClient();
 
@@ -123,56 +124,56 @@ export class VendorService {
   /**
    * 4. Request Payout
    */
-  static async requestPayout(userId: string, amount: number, bankDetails: any) {
-    const validData = payoutSchema.parse({ amount, bankDetails });
-    const { availableBalance } = await this.getVendorEarnings(userId);
+  // static async requestPayout(userId: string, amount: number, bankDetails: any) {
+  //   const validData = payoutSchema.parse({ amount, bankDetails });
+  //   const { availableBalance } = await this.getVendorEarnings(userId);
     
-    if (validData.amount < 100) throw new Error("Minimum withdrawal is ₦100");
-    if (validData.amount > availableBalance) {
-      throw new Error(`Insufficient funds. Available: ₦${availableBalance.toLocaleString()}`);
-    }
+  //   if (validData.amount < 100) throw new Error("Minimum withdrawal is ₦100");
+  //   if (validData.amount > availableBalance) {
+  //     throw new Error(`Insufficient funds. Available: ₦${availableBalance.toLocaleString()}`);
+  //   }
 
-    const restaurant = await prisma.restaurant.findUnique({
-      where: { ownerId: userId },
-      select: { name: true },
-    });
+  //   const restaurant = await prisma.restaurant.findUnique({
+  //     where: { ownerId: userId },
+  //     select: { name: true },
+  //   });
 
-    if (!restaurant) throw new Error("Restaurant Not Found");
+  //   if (!restaurant) throw new Error("Restaurant Not Found");
 
-    const accountInfo = await PaymentService.resolveAccount(
-      validData.bankDetails.accountNumber,
-      validData.bankDetails.bankName
-    );
+  //   const accountInfo = await PaymentService.resolveAccount(
+  //     validData.bankDetails.accountNumber,
+  //     validData.bankDetails.bankName
+  //   );
 
-    return await prisma.$transaction(async (tx) => {
-      const transaction = await tx.transaction.create({
-        data: {
-          userId,
-          amount: validData.amount,
-          type: TransactionType.DEBIT,
-          category: TransactionCategory.WITHDRAWAL,
-          status: TransactionStatus.PENDING,
-          description: `Payout to ${accountInfo.account_name}`,
-          reference: `PAYOUT-${Date.now()}`,
-        },
-      });
+  //   return await prisma.$transaction(async (tx) => {
+  //     const transaction = await tx.transaction.create({
+  //       data: {
+  //         userId,
+  //         amount: validData.amount,
+  //         type: TransactionType.DEBIT,
+  //         category: TransactionCategory.WITHDRAWAL,
+  //         status: TransactionStatus.PENDING,
+  //         description: `Payout to ${accountInfo.account_name}`,
+  //         reference: `PAYOUT-${Date.now()}`,
+  //       },
+  //     });
 
-      try {
-        const recipient = await PaymentService.createTransferRecipient(
-          accountInfo.account_name,
-          validData.bankDetails.accountNumber,
-          validData.bankDetails.bankName
-        );
-        await PaymentService.initiateTransfer(validData.amount, recipient, transaction.reference);
-      } catch (e: any) {
-        console.error("Payout API failed:", e.message);
-        throw new Error(`Payout failed: ${e.message}`);
-      }
+  //     try {
+  //       const recipient = await PaymentService.createTransferRecipient(
+  //         accountInfo.account_name,
+  //         validData.bankDetails.accountNumber,
+  //         validData.bankDetails.bankName
+  //       );
+  //       await PaymentService.initiateTransfer(validData.amount, recipient, transaction.reference);
+  //     } catch (e: any) {
+  //       console.error("Payout API failed:", e.message);
+  //       throw new Error(`Payout failed: ${e.message}`);
+  //     }
 
-      sendAdminPayoutAlert(restaurant.name, validData.amount, validData.bankDetails);
-      return transaction;
-    });
-  }
+  //     sendAdminPayoutAlert(restaurant.name, validData.amount, validData.bankDetails);
+  //     return transaction;
+  //   });
+  // }
 
   // =========================================================================
   // 🚀 REFACTORED VENDOR ORDER ACTIONS (Replacing updateOrderStatus)
@@ -190,7 +191,7 @@ export class VendorService {
 
     if (!order) throw new Error("Order not found");
     if (order.restaurant.ownerId !== vendorId) throw new Error("Unauthorized to access this order");
-    if (order.status !== "PENDING") throw new Error("Order has already been processed");
+    OrderStateMachine.validateTransition(order.status, OrderStatus.PREPARING);
 
     const updatedOrder = await prisma.order.update({
       where: { id: orderId },
@@ -224,7 +225,7 @@ export class VendorService {
 
     if (!order) throw new Error("Order not found");
     if (order.restaurant.ownerId !== vendorId) throw new Error("Unauthorized");
-    if (order.status !== "PREPARING") throw new Error("Order must be preparing before it can be marked ready");
+    OrderStateMachine.validateTransition(order.status, OrderStatus.READY_FOR_PICKUP);
 
     // Atomic Transaction to update status AND log the earnings
     const updatedOrder = await prisma.$transaction(async (tx) => {
@@ -279,7 +280,7 @@ export class VendorService {
 
     if (!order) throw new Error("Order not found");
     if (order.restaurant.ownerId !== vendorId) throw new Error("Unauthorized");
-    if (["DELIVERED", "OUT_FOR_DELIVERY"].includes(order.status)) throw new Error("Cannot cancel an order that is already on the way");
+    OrderStateMachine.validateTransition(order.status, OrderStatus.CANCELLED);
 
     let newPaymentStatus = order.paymentStatus;
 

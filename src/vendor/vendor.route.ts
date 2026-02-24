@@ -331,77 +331,7 @@ router.get("/earnings", authMiddleware, VendorController.getEarnings);
  */
 router.get("/transactions", authMiddleware, VendorController.getTransactions);
 
-/**
- * @swagger
- * /vendor/payout:
- *   post:
- *     summary: Request a payout from the vendor's wallet
- *     description: |
- *       Validates the bank account via Paystack, creates a debit transaction, and initiates a transfer.
- *       Unlike the rider payout, this does **not** silently fall back to manual — if the Paystack
- *       transfer fails, the entire request fails and the transaction is rolled back.
- *
- *       Minimum withdrawal: ₦100. Amount must not exceed available balance.
- *     tags: [Vendors]
- *     security:
- *       - bearerAuth: []
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required:
- *               - amount
- *               - bankDetails
- *             properties:
- *               amount:
- *                 type: number
- *                 description: Amount to withdraw in Naira (min ₦100)
- *                 example: 10000
- *               bankDetails:
- *                 type: object
- *                 required:
- *                   - accountNumber
- *                   - bankName
- *                 properties:
- *                   accountNumber:
- *                     type: string
- *                     example: "0123456789"
- *                   bankName:
- *                     type: string
- *                     description: Paystack bank code (e.g. "058" for GTBank)
- *                     example: "058"
- *     responses:
- *       201:
- *         description: Payout initiated successfully
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                   example: true
- *                 message:
- *                   type: string
- *                   example: Payout request submitted
- *                 data:
- *                   $ref: '#/components/schemas/Transaction'
- *       400:
- *         description: Insufficient balance, invalid amount, bad bank details, or transfer failure
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/Error'
- *       401:
- *         description: Unauthorized
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/Error'
- */
-router.post("/payout", authMiddleware, VendorController.requestPayout);
+
 
 export default router;
 

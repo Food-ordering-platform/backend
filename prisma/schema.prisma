@@ -43,9 +43,6 @@ model User {
 
   termsAcceptedAt DateTime?
 
-  webPushSubscriptions WebPushSubscription[]
-
-  reviews              Review[]
 
   isOnline    Boolean    @default(false)
 }
@@ -103,7 +100,7 @@ model Restaurant {
   updatedAt    DateTime      @updatedAt
 
   // 🟢 ADD THIS RELATION
-  reviews      Review[]
+
   rating       Float     @default(0.0) // Average rating
   ratingCount  Int       @default(0)
 }
@@ -273,36 +270,4 @@ enum TransactionStatus {
   PENDING
   SUCCESS
   FAILED
-}
-
-
-
-// Add this model to your schema.prisma
-model WebPushSubscription {
-  id        String   @id @default(cuid())
-  userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  endpoint  String   @unique
-  p256dh    String
-  auth      String
-  createdAt DateTime @default(now())
-
-  @@index([userId])
-}
-
-// 🟢 ADD THIS NEW MODEL (For Ratings)
-model Review {
-  id           String     @id @default(uuid())
-  rating       Int        // 1-5 Stars
-  comment      String?
-  
-  userId       String
-  user         User       @relation(fields: [userId], references: [id])
-  
-  restaurantId String
-  restaurant   Restaurant @relation(fields: [restaurantId], references: [id])
-  
-  orderId      String     @unique // One review per order
-  
-  createdAt    DateTime   @default(now())
 }

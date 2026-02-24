@@ -137,6 +137,11 @@ export class RiderService {
       const rider = await tx.user.findUnique({ where: { id: riderId } });
       if (!rider) throw new Error("Rider profile not found");
 
+      // ✅ 1. DFA Enforcement (Fetch order first to validate)
+      const order = await tx.order.findUnique({ where: { id: orderId } });
+      if (!order) throw new Error("Order not found");
+      OrderStateMachine.validateTransition(order.status, OrderStatus.RIDER_ACCEPTED);
+
       // 🛑 GATEKEEPER 1: Ensure Rider is not busy with another active order
       const existingActiveOrder = await tx.order.findFirst({
         where: {
@@ -197,37 +202,37 @@ export class RiderService {
    * If a rider accepts by mistake or cannot fulfill it, they can "reject" it back to the pool.
    * This resets the order to READY_FOR_PICKUP.
    */
-  static async rejectOrder(riderId: string, orderId: string, reason?: string) {
-    return await prisma.$transaction(async (tx) => {
-      const order = await tx.order.findUnique({ where: { id: orderId } });
+  // static async rejectOrder(riderId: string, orderId: string, reason?: string) {
+  //   return await prisma.$transaction(async (tx) => {
+  //     const order = await tx.order.findUnique({ where: { id: orderId } });
 
-      if (!order) throw new Error("Order not found");
+  //     if (!order) throw new Error("Order not found");
       
-      // Ensure the rider requesting rejection is the one assigned
-      if (order.riderId !== riderId) throw new Error("You are not assigned to this order");
+  //     // Ensure the rider requesting rejection is the one assigned
+  //     if (order.riderId !== riderId) throw new Error("You are not assigned to this order");
       
-      // Can only reject if it hasn't been picked up yet (Out for Delivery)
-      if (order.status !== OrderStatus.RIDER_ACCEPTED) {
-        throw new Error("Cannot reject order at this stage. Please contact support.");
-      }
+  //     // Can only reject if it hasn't been picked up yet (Out for Delivery)
+  //     if (order.status !== OrderStatus.RIDER_ACCEPTED) {
+  //       throw new Error("Cannot reject order at this stage. Please contact support.");
+  //     }
 
-      // Reset Order to Pool
-      const updatedOrder = await tx.order.update({
-        where: { id: orderId },
-        data: {
-          status: OrderStatus.READY_FOR_PICKUP,
-          riderId: null, // Remove assignment
-        },
-        include: { restaurant: true }
-      });
+  //     // Reset Order to Pool
+  //     const updatedOrder = await tx.order.update({
+  //       where: { id: orderId },
+  //       data: {
+  //         status: OrderStatus.READY_FOR_PICKUP,
+  //         riderId: null, // Remove assignment
+  //       },
+  //       include: { restaurant: true }
+  //     });
 
-      // Notify System
-      console.log(`⚠️ Rider ${riderId} rejected Order ${order.reference}. Reason: ${reason}`);
+  //     // Notify System
+  //     console.log(`⚠️ Rider ${riderId} rejected Order ${order.reference}. Reason: ${reason}`);
 
 
-      return updatedOrder;
-    });
-  }
+  //     return updatedOrder;
+  //   });
+  // }
 
   // ---> NEW METHOD: Handle Pickup & Delivery <---
   // src/rider/rider.service.ts
@@ -241,6 +246,7 @@ export class RiderService {
       
       if (!order) throw new Error("Order not found");
       if (order.riderId !== riderId) throw new Error("Unauthorized");
+      OrderStateMachine.validateTransition(order.status, OrderStatus.OUT_FOR_DELIVERY);
 
       // 1. Update Order Status
       const updatedOrder = await tx.order.update({
@@ -303,6 +309,7 @@ export class RiderService {
       
       if (!order) throw new Error("Order not found");
       if (order.riderId !== riderId) throw new Error("Unauthorized access to this order");
+      OrderStateMachine.validateTransition(order.status, OrderStatus.DELIVERED);
       
       // 1. Verify OTP
       // Note: Make sure your order creation logic actually generates this code! 
@@ -494,87 +501,87 @@ export class RiderService {
 //     });
 //   }
 
-static async requestPayout(
-    riderId: string, 
-    amount: number, 
-    bankDetails: { bankCode: string; accountNumber: string }
-  ) {
-    // 1. Check Internal Balance
-    const { availableBalance } = await this.getRiderEarnings(riderId);
+// static async requestPayout(
+//     riderId: string, 
+//     amount: number, 
+//     bankDetails: { bankCode: string; accountNumber: string }
+//   ) {
+//     // 1. Check Internal Balance
+//     const { availableBalance } = await this.getRiderEarnings(riderId);
 
-    if (amount <= 0) throw new Error("Invalid amount");
-    if (amount < 100) throw new Error("Minimum withdrawal is 100"); 
-    if (amount > availableBalance) throw new Error("Insufficient funds");
+//     if (amount <= 0) throw new Error("Invalid amount");
+//     if (amount < 100) throw new Error("Minimum withdrawal is 100"); 
+//     if (amount > availableBalance) throw new Error("Insufficient funds");
 
-    const reference = `PAYOUT-${Date.now()}-${riderId.slice(0, 4)}`;
+//     const reference = `PAYOUT-${Date.now()}-${riderId.slice(0, 4)}`;
 
-    return await prisma.$transaction(async (tx) => {
+//     return await prisma.$transaction(async (tx) => {
       
-      // 2. Resolve Bank Account (This usually works on Starter Accounts)
-      // If this fails, the account number is wrong, so we SHOULD throw an error here.
-      const accountInfo = await PaymentService.resolveAccount(
-        bankDetails.accountNumber, 
-        bankDetails.bankCode
-      );
+//       // 2. Resolve Bank Account (This usually works on Starter Accounts)
+//       // If this fails, the account number is wrong, so we SHOULD throw an error here.
+//       const accountInfo = await PaymentService.resolveAccount(
+//         bankDetails.accountNumber, 
+//         bankDetails.bankCode
+//       );
 
-      // 3. Create the Transaction Record (Lock the funds)
-      // We mark it as PENDING initially.
-      const transaction = await tx.transaction.create({
-        data: {
-          userId: riderId,
-          amount: amount, 
-          type: TransactionType.DEBIT,
-          category: TransactionCategory.WITHDRAWAL,
-          status: TransactionStatus.PENDING, 
-          description: `Payout to ${accountInfo.account_name} (${accountInfo.account_number})`,
-          reference: reference
-        }
-      });
+//       // 3. Create the Transaction Record (Lock the funds)
+//       // We mark it as PENDING initially.
+//       const transaction = await tx.transaction.create({
+//         data: {
+//           userId: riderId,
+//           amount: amount, 
+//           type: TransactionType.DEBIT,
+//           category: TransactionCategory.WITHDRAWAL,
+//           status: TransactionStatus.PENDING, 
+//           description: `Payout to ${accountInfo.account_name} (${accountInfo.account_number})`,
+//           reference: reference
+//         }
+//       });
 
-      // 4. Try Automatic Payout (But don't crash if it fails)
-      try {
-        const recipientCode = await PaymentService.createTransferRecipient(
-          accountInfo.account_name,
-          bankDetails.accountNumber,
-          bankDetails.bankCode
-        );
+//       // 4. Try Automatic Payout (But don't crash if it fails)
+//       try {
+//         const recipientCode = await PaymentService.createTransferRecipient(
+//           accountInfo.account_name,
+//           bankDetails.accountNumber,
+//           bankDetails.bankCode
+//         );
 
-        const transferResult = await PaymentService.initiateTransfer(
-          amount,
-          recipientCode,
-          reference,
-          "ChowEazy Payout"
-        );
+//         const transferResult = await PaymentService.initiateTransfer(
+//           amount,
+//           recipientCode,
+//           reference,
+//           "ChowEazy Payout"
+//         );
 
-        // If Paystack accepts it properly
-        if (transferResult.status === "success" || transferResult.status === "otp") {
-             // In a real live app, you might wait for a webhook to confirm success.
-             // But for now, we assume success if the API didn't error.
-             // Ideally, keep it PENDING until webhook, but for MVP:
-             // await tx.transaction.update({ ... status: SUCCESS ... })
-        }
+//         // If Paystack accepts it properly
+//         if (transferResult.status === "success" || transferResult.status === "otp") {
+//              // In a real live app, you might wait for a webhook to confirm success.
+//              // But for now, we assume success if the API didn't error.
+//              // Ideally, keep it PENDING until webhook, but for MVP:
+//              // await tx.transaction.update({ ... status: SUCCESS ... })
+//         }
 
-      } catch (error: any) {
-        // ⚠️ HERE IS THE FIX:
-        // We catch the "Starter Business" error here.
-        console.warn(`⚠️ Automatic Payout Failed (Falling back to Manual): ${error.message}`);
+//       } catch (error: any) {
+//         // ⚠️ HERE IS THE FIX:
+//         // We catch the "Starter Business" error here.
+//         console.warn(`⚠️ Automatic Payout Failed (Falling back to Manual): ${error.message}`);
         
-        // We update the description so the Admin knows to pay manually
-        await tx.transaction.update({
-            where: { id: transaction.id },
-            data: { 
-                description: `MANUAL PAYOUT REQUIRED: ${accountInfo.account_name} - ${accountInfo.account_number} (${error.message})` 
-            }
-        });
+//         // We update the description so the Admin knows to pay manually
+//         await tx.transaction.update({
+//             where: { id: transaction.id },
+//             data: { 
+//                 description: `MANUAL PAYOUT REQUIRED: ${accountInfo.account_name} - ${accountInfo.account_number} (${error.message})` 
+//             }
+//         });
 
-        // WE DO NOT THROW THE ERROR. 
-        // We let the function return the 'transaction' object.
-        // This means the Rider App receives a "200 OK" and the UI updates.
-      }
+//         // WE DO NOT THROW THE ERROR. 
+//         // We let the function return the 'transaction' object.
+//         // This means the Rider App receives a "200 OK" and the UI updates.
+//       }
 
-      return transaction;
-    });
-  }
+//       return transaction;
+//     });
+//   }
 
   static async getDeliveryHistory(riderId: string) {
     return prisma.order.findMany({

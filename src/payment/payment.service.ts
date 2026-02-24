@@ -112,85 +112,85 @@ export class PaymentService {
    * 1. Resolve Bank Account
    * Verifies that the account number is correct for the selected bank.
    */
-  static async resolveAccount(accountNumber: string, bankCode: string) {
-    try {
-      const response = await axios.get(
-        `https://api.paystack.co/bank/resolve?account_number=${accountNumber}&bank_code=${bankCode}`,
-        {
-          headers: { Authorization: `Bearer ${PAYSTACK_SECRET_KEY}` },
-        },
-      );
-      return response.data.data; // Returns { account_name, account_number, bank_id }
-    } catch (error: any) {
-      console.error(
-        "Resolve Account Error:",
-        error.response?.data || error.message,
-      );
-      throw new Error("Invalid bank account details");
-    }
-  }
+  // static async resolveAccount(accountNumber: string, bankCode: string) {
+  //   try {
+  //     const response = await axios.get(
+  //       `https://api.paystack.co/bank/resolve?account_number=${accountNumber}&bank_code=${bankCode}`,
+  //       {
+  //         headers: { Authorization: `Bearer ${PAYSTACK_SECRET_KEY}` },
+  //       },
+  //     );
+  //     return response.data.data; // Returns { account_name, account_number, bank_id }
+  //   } catch (error: any) {
+  //     console.error(
+  //       "Resolve Account Error:",
+  //       error.response?.data || error.message,
+  //     );
+  //     throw new Error("Invalid bank account details");
+  //   }
+  // }
 
-  static async createTransferRecipient(
-    name: string,
-    accountNumber: string,
-    bankCode: string,
-  ) {
-    try {
-      const response = await axios.post(
-        "https://api.paystack.co/transferrecipient",
-        {
-          type: "nuban",
-          name: name,
-          account_number: accountNumber,
-          bank_code: bankCode,
-          currency: "NGN",
-        },
-        {
-          headers: { Authorization: `Bearer ${PAYSTACK_SECRET_KEY}` },
-        },
-      );
-      return response.data.data.recipient_code; // Returns code like 'RCP_w4389...'
-    } catch (error: any) {
-      console.error(
-        "Create Recipient Error:",
-        error.response?.data || error.message,
-      );
-      throw new Error("Failed to create transfer recipient");
-    }
-  }
+  // static async createTransferRecipient(
+  //   name: string,
+  //   accountNumber: string,
+  //   bankCode: string,
+  // ) {
+  //   try {
+  //     const response = await axios.post(
+  //       "https://api.paystack.co/transferrecipient",
+  //       {
+  //         type: "nuban",
+  //         name: name,
+  //         account_number: accountNumber,
+  //         bank_code: bankCode,
+  //         currency: "NGN",
+  //       },
+  //       {
+  //         headers: { Authorization: `Bearer ${PAYSTACK_SECRET_KEY}` },
+  //       },
+  //     );
+  //     return response.data.data.recipient_code; // Returns code like 'RCP_w4389...'
+  //   } catch (error: any) {
+  //     console.error(
+  //       "Create Recipient Error:",
+  //       error.response?.data || error.message,
+  //     );
+  //     throw new Error("Failed to create transfer recipient");
+  //   }
+  // }
 
-  static async initiateTransfer(
-    amount: number,
-    recipientCode: string,
-    reference: string | null,
-    reason = "Payout",
-  ) {
-    try {
-      const response = await axios.post(
-        "https://api.paystack.co/transfer",
-        {
-          source: "balance", // Use your Paystack Balance
-          amount: Math.round(amount * 100), // Convert to Kobo
-          recipient: recipientCode,
-          reason: reason,
-          reference: reference,
-        },
-        {
-          headers: { Authorization: `Bearer ${PAYSTACK_SECRET_KEY}` },
-        },
-      );
-      return response.data.data;
-    } catch (error: any) {
-      console.error("Transfer Error:", error.response?.data || error.message);
-      // Handle specific Paystack errors (like low balance)
-      if (error.response?.data?.code === "transfer_balance_insufficient") {
-        throw new Error(
-          "System wallet balance is too low to process this payout.",
-        );
-      }
-      throw new Error(error.response?.data?.message || "Payout failed");
-    }
-  }
+  // static async initiateTransfer(
+  //   amount: number,
+  //   recipientCode: string,
+  //   reference: string | null,
+  //   reason = "Payout",
+  // ) {
+  //   try {
+  //     const response = await axios.post(
+  //       "https://api.paystack.co/transfer",
+  //       {
+  //         source: "balance", // Use your Paystack Balance
+  //         amount: Math.round(amount * 100), // Convert to Kobo
+  //         recipient: recipientCode,
+  //         reason: reason,
+  //         reference: reference,
+  //       },
+  //       {
+  //         headers: { Authorization: `Bearer ${PAYSTACK_SECRET_KEY}` },
+  //       },
+  //     );
+  //     return response.data.data;
+  //   } catch (error: any) {
+  //     console.error("Transfer Error:", error.response?.data || error.message);
+  //     // Handle specific Paystack errors (like low balance)
+  //     if (error.response?.data?.code === "transfer_balance_insufficient") {
+  //       throw new Error(
+  //         "System wallet balance is too low to process this payout.",
+  //       );
+  //     }
+  //     throw new Error(error.response?.data?.message || "Payout failed");
+  //   }
+  // }
 
   /**
    * Helper: Get List of Banks (Optional, if you need to send this to frontend)

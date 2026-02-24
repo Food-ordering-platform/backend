@@ -33,7 +33,6 @@ export class OrderService {
     return Math.max(0, vendorShare);
   }
 
-  // ... (getOrderQuote and createOrderWithPayment remain unchanged) ...
   static async getOrderQuote(
     restaurantId: string,
     deliveryLatitude: number,

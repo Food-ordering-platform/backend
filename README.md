@@ -41,9 +41,6 @@ This system acts as the central engine coordinating a three-way marketplace betw
 ### 💳 Financial Ledger & Payments
 
 - **Centralized Transactions:** A robust `Transaction` table acts as a ledger tracking credits/debits for Orders, Delivery Fees, Platform Fees, and Withdrawals.
-- **Webhook Processing:** Raw body parsing configured specifically for secure payment gateway webhook validation (`src/payment/payment.controller.ts`).
-- **Idempotency:** Unique `idempotencyKey` and reference tokens to prevent duplicate charges and race conditions during payment processing.
-
 ---
 
 ### 🔔 Notifications

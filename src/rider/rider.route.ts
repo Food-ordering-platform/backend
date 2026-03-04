@@ -56,7 +56,7 @@ router.use(authMiddleware);
  *             schema:
  *               $ref: '#/components/schemas/Error'
  */
-router.get("/orders/available", RiderController.getAvailableOrders);
+router.get("/orders/available", authMiddleware, RiderController.getAvailableOrders);
 
 /**
  * @swagger
@@ -95,7 +95,7 @@ router.get("/orders/available", RiderController.getAvailableOrders);
  *             schema:
  *               $ref: '#/components/schemas/Error'
  */
-router.get("/orders/active", RiderController.getActiveOrder);
+router.get("/orders/active", authMiddleware, RiderController.getActiveOrder);
 
 /**
  * @swagger
@@ -148,7 +148,7 @@ router.get("/orders/active", RiderController.getActiveOrder);
  *             schema:
  *               $ref: '#/components/schemas/Error'
  */
-router.patch("/orders/:id/accept", RiderController.acceptOrder);
+router.patch("/orders/:id/accept", authMiddleware, RiderController.acceptOrder);
 
 
 
@@ -200,7 +200,7 @@ router.patch("/orders/:id/accept", RiderController.acceptOrder);
  *             schema:
  *               $ref: '#/components/schemas/Error'
  */
-router.patch("/orders/:id/pickup", RiderController.confirmPickup);
+router.patch("/orders/:id/pickup", authMiddleware, RiderController.confirmPickup);
 
 /**
  * @swagger
@@ -266,7 +266,7 @@ router.patch("/orders/:id/pickup", RiderController.confirmPickup);
  *             schema:
  *               $ref: '#/components/schemas/Error'
  */
-router.patch("/orders/:id/deliver", RiderController.confirmDelivery);
+router.patch("/orders/:id/deliver", authMiddleware, RiderController.confirmDelivery);
 
 // ─────────────────────────────────────────────
 // EARNINGS & HISTORY
@@ -331,7 +331,7 @@ router.patch("/orders/:id/deliver", RiderController.confirmDelivery);
  *             schema:
  *               $ref: '#/components/schemas/Error'
  */
-router.get("/earnings", RiderController.getEarnings);
+router.get("/earnings", authMiddleware, RiderController.getEarnings);
 
 /**
  * @swagger
@@ -369,12 +369,12 @@ router.get("/earnings", RiderController.getEarnings);
  *             schema:
  *               $ref: '#/components/schemas/Error'
  */
-router.get("/history", RiderController.getHistory);
+router.get("/history", authMiddleware, RiderController.getHistory);
 
 // ─────────────────────────────────────────────
 // PAYOUT & STATUS
 // ─────────────────────────────────────────────
 
-router.post("/payout", RiderController.requestPayout)
+router.post("/payout", authMiddleware, RiderController.requestPayout)
 
 export default router;

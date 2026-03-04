@@ -328,16 +328,16 @@ export class RiderService {
       pendingBalance, // <--- Sent to frontend
       totalEarnings: totalCredits, // Historical total
       withdrawn: totalDebits,
-      transactions: transactions.map(t => ({
-        id: t.id,
-        amount: t.amount,
-        type: t.type,
-        category: t.category,
-        status: t.status,
-        description: t.description,
-        date: t.createdAt,
-        reference: t.reference
-      }))
+      // transactions: transactions.map(t => ({
+      //   id: t.id,
+      //   amount: t.amount,
+      //   type: t.type,
+      //   category: t.category,
+      //   status: t.status,
+      //   description: t.description,
+      //   date: t.createdAt,
+      //   reference: t.reference
+      // }))
     };
   }
 
@@ -433,5 +433,14 @@ static async requestPayout(userId: string, amount: number, bankDetails: any) {
     });
 
     return updatedUser;
+  }
+
+  //Get rider transaction
+    static async getTransactions(userId: string) {
+    return await prisma.transaction.findMany({
+      where: { userId },
+      orderBy: { createdAt: "desc" },
+      take: 50,
+    });
   }
 }

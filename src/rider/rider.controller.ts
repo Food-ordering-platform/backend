@@ -192,6 +192,16 @@ export class RiderController {
     }
   }
 
+   static async getTransactions(req: Request, res: Response) {
+      try {
+        const riderId = req.user!.id;
+        const transactions = await RiderService.getTransactions(riderId);
+        return res.status(200).json({ success: true, data: transactions });
+      } catch (err: any) {
+        return res.status(400).json({ success: false, message: err.message });
+      }
+    }
+
   // Add to RiderController class
   static async getHistory(req: Request, res: Response) {
     try {

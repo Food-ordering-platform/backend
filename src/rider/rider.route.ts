@@ -377,4 +377,6 @@ router.get("/history", authMiddleware, RiderController.getHistory);
 
 router.post("/payout", authMiddleware, RiderController.requestPayout)
 
+router.get("/transactions", authMiddleware, RiderController.getTransactions)
+
 export default router;

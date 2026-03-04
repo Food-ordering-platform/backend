@@ -332,6 +332,9 @@ router.get("/earnings", authMiddleware, VendorController.getEarnings);
 router.get("/transactions", authMiddleware, VendorController.getTransactions);
 
 
+router.post("/payout", authMiddleware, VendorController.requestPayout);
+
+
 
 export default router;
 

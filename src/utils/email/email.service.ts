@@ -179,42 +179,6 @@ export async function sendDeliveryCode(
   }
 }
 
-// --- PAYOUT REQUEST (USER) ---
-export async function sendPayoutRequestEmail(
-  email: string,
-  name: string,
-  amount: number,
-  bankName: string
-) {
-  console.log(`[EmailService] Sending Payout Request Email to: ${email}`); // <--- LOG
-  try {
-    const html = generateEmailHTML(
-      "Withdrawal Request",
-      `
-        <p>Hi <b>${name}</b>,</p>
-        <p>We have received your request to withdraw funds.</p>
-
-        <div style="background:#F3F4F6;padding:20px;border-radius:8px;margin:20px 0;">
-          <div>Amount Requested:</div>
-          <div style="font-size:24px;font-weight:bold;color:#7b1e3a;">₦${amount.toLocaleString()}</div>
-          <div>Destination: <b>${bankName}</b></div>
-        </div>
-
-        <p>Our team will review your request shortly.</p>
-      `,
-      "🏦"
-    );
-
-    await sendEmail({
-      to: email,
-      subject: "Withdrawal Request Received",
-      html,
-    });
-  } catch (err: any) {
-    console.error("❌ Payout Email Failed:", err.message);
-  }
-}
-
 // --- ADMIN PAYOUT ALERT ---
 export async function sendAdminPayoutAlert(
   vendorName: string,
@@ -261,5 +225,58 @@ export async function sendAdminPayoutAlert(
     console.log(`✅ Admin Payout Alert sent`);
   } catch (err: any) {
     console.error("❌ Admin Alert Failed:", err.message);
+  }
+}
+
+// --- PAYOUT REQUEST (VENDOR/RIDER) ---
+/**
+ * Notifies the user that their manual withdrawal request is being processed.
+ */
+export async function sendPayoutRequestEmail({
+  email,
+  ownerName,
+  restaurantName,
+  amount,
+  bankName,
+  accountNumber
+}: {
+  email: string;
+  ownerName: string;
+  restaurantName: string;
+  amount: number;
+  bankName: string;
+  accountNumber: string;
+}) {
+  console.log(`[EmailService] Sending Withdrawal Processing Email to: ${email}`);
+  try {
+    const html = generateEmailHTML(
+      "Withdrawal Processing",
+      `
+        <p>Hi <b>${ownerName}</b> (${restaurantName}),</p>
+        <p>Your request to withdraw funds from your ChowEazy wallet has been received and is currently being processed.</p>
+
+        <div style="background:#F9FAFB; border: 1px solid #E5E7EB; padding:20px; border-radius:12px; margin:20px 0;">
+          <div style="font-size:12px; text-transform:uppercase; font-weight:bold; color:#6B7280; margin-bottom:4px;">Amount Requested</div>
+          <div style="font-size:28px; font-weight:bold; color:#7b1e3a;">₦${amount.toLocaleString()}</div>
+          <hr style="border:0; border-top:1px solid #E5E7EB; margin:15px 0;" />
+          <div style="font-size:14px; color:#374151; margin-bottom:5px;"><b>Bank:</b> ${bankName}</div>
+          <div style="font-size:14px; color:#374151;"><b>Account:</b> ${accountNumber}</div>
+          <div style="font-size:12px; color:#6B7280; margin-top:10px;">Status: <span style="color:#D97706; font-weight:bold;">Pending Verification</span></div>
+        </div>
+
+        <p>Our finance team will verify the details and complete the transfer within 24-48 business hours.</p>
+        <p>Thank you for choosing ChowEazy!</p>
+      `,
+      "🏦"
+    );
+
+    await sendEmail({
+      to: email,
+      subject: "🏦 Withdrawal Request in Progress - ChowEazy",
+      html,
+    });
+    
+  } catch (err: any) {
+    console.error("❌ Payout Processing Email Failed:", err.message);
   }
 }

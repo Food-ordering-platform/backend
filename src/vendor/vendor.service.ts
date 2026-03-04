@@ -10,6 +10,7 @@ import {
   sendDeliveryCode,
   sendOrderStatusEmail,
   sendAdminPayoutAlert,
+  sendPayoutRequestEmail,
 } from "../utils/email/email.service";
 import { sendPushNotification } from "../utils/notification";
 import { RiderService } from "../rider/rider.service";
@@ -59,124 +60,10 @@ export class VendorService {
     });
   }
 
-  /**
-   * 2. Get Vendor Earnings
-   */
-  static async getVendorEarnings(userId: string) {
-    const transactions = await prisma.transaction.findMany({
-      where: { userId },
-      orderBy: { createdAt: "desc" },
-    });
 
-    const totalCredits = transactions
-      .filter((t) => t.type === TransactionType.CREDIT && t.status === TransactionStatus.SUCCESS)
-      .reduce((sum, t) => sum + t.amount, 0);
-
-    const totalDebits = transactions
-      .filter(
-        (t) =>
-          t.type === TransactionType.DEBIT &&
-          (t.status === TransactionStatus.SUCCESS || t.status === TransactionStatus.PENDING)
-      )
-      .reduce((sum, t) => sum + t.amount, 0);
-
-    const availableBalance = totalCredits - totalDebits;
-
-    const restaurant = await prisma.restaurant.findUnique({ where: { ownerId: userId } });
-    let pendingBalance = 0;
-
-    if (restaurant) {
-      const activeOrders = await prisma.order.findMany({
-        where: {
-          restaurantId: restaurant.id,
-          status: { in: ["PREPARING"] }, 
-          paymentStatus: "PAID",
-        },
-      });
-
-      pendingBalance = activeOrders.reduce((sum, order) => {
-        return (
-          sum + calculateVendorShare(Number(order.totalAmount), Number(order.deliveryFee))
-        );
-      }, 0);
-    }
-
-    return {
-      availableBalance,
-      pendingBalance,
-      totalEarnings: totalCredits,
-      withdrawn: totalDebits,
-      currency: "NGN",
-    };
-  }
-
-  /**
-   * 3. Get Vendor Transactions
-   */
-  static async getTransactions(userId: string) {
-    return await prisma.transaction.findMany({
-      where: { userId },
-      orderBy: { createdAt: "desc" },
-      take: 50,
-    });
-  }
-
-  /**
-   * 4. Request Payout
-   */
-  // static async requestPayout(userId: string, amount: number, bankDetails: any) {
-  //   const validData = payoutSchema.parse({ amount, bankDetails });
-  //   const { availableBalance } = await this.getVendorEarnings(userId);
-    
-  //   if (validData.amount < 100) throw new Error("Minimum withdrawal is ₦100");
-  //   if (validData.amount > availableBalance) {
-  //     throw new Error(`Insufficient funds. Available: ₦${availableBalance.toLocaleString()}`);
-  //   }
-
-  //   const restaurant = await prisma.restaurant.findUnique({
-  //     where: { ownerId: userId },
-  //     select: { name: true },
-  //   });
-
-  //   if (!restaurant) throw new Error("Restaurant Not Found");
-
-  //   const accountInfo = await PaymentService.resolveAccount(
-  //     validData.bankDetails.accountNumber,
-  //     validData.bankDetails.bankName
-  //   );
-
-  //   return await prisma.$transaction(async (tx) => {
-  //     const transaction = await tx.transaction.create({
-  //       data: {
-  //         userId,
-  //         amount: validData.amount,
-  //         type: TransactionType.DEBIT,
-  //         category: TransactionCategory.WITHDRAWAL,
-  //         status: TransactionStatus.PENDING,
-  //         description: `Payout to ${accountInfo.account_name}`,
-  //         reference: `PAYOUT-${Date.now()}`,
-  //       },
-  //     });
-
-  //     try {
-  //       const recipient = await PaymentService.createTransferRecipient(
-  //         accountInfo.account_name,
-  //         validData.bankDetails.accountNumber,
-  //         validData.bankDetails.bankName
-  //       );
-  //       await PaymentService.initiateTransfer(validData.amount, recipient, transaction.reference);
-  //     } catch (e: any) {
-  //       console.error("Payout API failed:", e.message);
-  //       throw new Error(`Payout failed: ${e.message}`);
-  //     }
-
-  //     sendAdminPayoutAlert(restaurant.name, validData.amount, validData.bankDetails);
-  //     return transaction;
-  //   });
-  // }
 
   // =========================================================================
-  // 🚀 REFACTORED VENDOR ORDER ACTIONS (Replacing updateOrderStatus)
+  // VENDOR ORDER ACTIONS (Replacing updateOrderStatus)
   // =========================================================================
 
   /**
@@ -301,5 +188,146 @@ export class VendorService {
     }
 
     return updatedOrder;
+  }
+
+  /**
+   * 2. Get Vendor Earnings
+   */
+  static async getVendorEarnings(userId: string) {
+    const transactions = await prisma.transaction.findMany({
+      where: { userId },
+      orderBy: { createdAt: "desc" },
+    });
+
+    const totalCredits = transactions
+      .filter((t) => t.type === TransactionType.CREDIT && t.status === TransactionStatus.SUCCESS)
+      .reduce((sum, t) => sum + t.amount, 0);
+
+    const totalDebits = transactions
+      .filter(
+        (t) =>
+          t.type === TransactionType.DEBIT &&
+          (t.status === TransactionStatus.SUCCESS || t.status === TransactionStatus.PENDING)
+      )
+      .reduce((sum, t) => sum + t.amount, 0);
+
+    const availableBalance = totalCredits - totalDebits;
+
+    const restaurant = await prisma.restaurant.findUnique({ where: { ownerId: userId } });
+    let pendingBalance = 0;
+
+    if (restaurant) {
+      const activeOrders = await prisma.order.findMany({
+        where: {
+          restaurantId: restaurant.id,
+          status: { in: ["PREPARING"] }, 
+          paymentStatus: "PAID",
+        },
+      });
+
+      pendingBalance = activeOrders.reduce((sum, order) => {
+        return (
+          sum + calculateVendorShare(Number(order.totalAmount), Number(order.deliveryFee))
+        );
+      }, 0);
+    }
+
+    return {
+      availableBalance,
+      pendingBalance,
+      totalEarnings: totalCredits,
+      withdrawn: totalDebits,
+      currency: "NGN",
+    };
+  }
+
+
+
+  /**
+   * 4. Request Payout
+   */
+ /**
+ * 4. Request Payout (Manual Workflow)
+ */
+static async requestPayout(userId: string, amount: number, bankDetails: any) {
+  // 1. Validate input and check balance
+  const validData = payoutSchema.parse({ amount, bankDetails });
+  const { availableBalance } = await this.getVendorEarnings(userId);
+
+  if (validData.amount < 1000) throw new Error("Minimum withdrawal is ₦1000");
+  if (validData.amount > availableBalance) {
+    throw new Error(`Insufficient funds. Available: ₦${availableBalance.toLocaleString()}`);
+  }
+
+  // 2. Fetch Restaurant name for the Admin Alert
+  const restaurant = await prisma.restaurant.findUnique({
+    where: { ownerId: userId },
+    include:{
+      owner:{
+        select:{
+          name: true,
+          email:true,
+        }
+      }
+    }
+  });
+
+if (!restaurant || !restaurant.owner) throw new Error("Restaurant or Owner Not Found");
+
+
+  // 3. Execute DB Transaction
+  return await prisma.$transaction(async (tx) => {
+    // Create the DEBIT record in the Ledger
+    const transaction = await tx.transaction.create({
+      data: {
+        userId,
+        amount: validData.amount,
+        type: TransactionType.DEBIT,
+        category: TransactionCategory.WITHDRAWAL,
+        status: TransactionStatus.PENDING, // It stays PENDING until Admin approves
+        description: `Manual Payout Request to ${validData.bankDetails.bankName} (${validData.bankDetails.accountNumber})`,
+        reference: `MAN-PAY-${Date.now()}`,
+        // Storing bank details in metadata or description for admin to see
+        metadata: {
+          accountNumber: validData.bankDetails.accountNumber,
+          bankName: validData.bankDetails.bankName,
+          accountName: validData.bankDetails.accountName
+        }
+      },
+    });
+
+    // 4. Trigger Notifications (Asynchronous vibes)
+    try {
+      // Alert the Admin to perform the manual bank transfer
+      await sendAdminPayoutAlert(restaurant.name, validData.amount, validData.bankDetails);
+      
+      // Notify the Vendor that their request is being processed
+      await sendPayoutRequestEmail({
+        email: restaurant.owner.email,
+        ownerName: restaurant.owner.name,
+        restaurantName: restaurant.name,
+        amount: validData.amount,
+        bankName: validData.bankDetails.bankName,
+        accountNumber: validData.bankDetails.accountNumber
+      });
+      
+      console.log(`Payout request logged for ${restaurant.name}. Reference: ${transaction.reference}`);
+    } catch (e: any) {
+  
+      console.error("Notification failed but transaction was recorded:", e.message);
+    }
+
+    return transaction;
+  });
+}
+
+
+   // Get Vendor Transactions   
+  static async getTransactions(userId: string) {
+    return await prisma.transaction.findMany({
+      where: { userId },
+      orderBy: { createdAt: "desc" },
+      take: 50,
+    });
   }
 }

@@ -241,11 +241,6 @@ export class VendorService {
     };
   }
 
-
-
-  /**
-   * 4. Request Payout
-   */
  /**
  * 4. Request Payout (Manual Workflow)
  */

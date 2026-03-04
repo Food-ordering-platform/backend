@@ -4,7 +4,8 @@ import { OrderStateMachine } from "../utils/order-state-machine";
 import { PaymentService } from "../payment/payment.service";
 import { sendPushToRiders } from "../utils/push-notification";
 import { calculateVendorShare } from "../config/pricing";
-import { sendOrderStatusEmail } from "../utils/email/email.service";
+import { sendAdminPayoutAlert, sendOrderStatusEmail, sendPayoutRequestEmail } from "../utils/email/email.service";
+import { payoutSchema } from "../restuarant/restaurant.validator";
 
 const prisma = new PrismaClient();
 
@@ -18,13 +19,7 @@ export class RiderService {
     );
   }
 
-  /**
-   * 1. Fetch all orders ready for pickup.
-   * Includes necessary details for the rider to make a decision (Distance, Fees, Items).
-   */
-  /**
-   * 1. Fetch available orders (ONLY if rider is free)
-   */
+   //1. Fetch available orders (ONLY if rider is free)
   static async getAvailableOrders(riderId: string) {
     // A. Check if Rider is Busy or Offline
     // We check two things:
@@ -94,7 +89,6 @@ export class RiderService {
   }
 
   static async getActiveOrder(riderId: string) {
-    
     return prisma.order.findFirst({
       where: {
         riderId: riderId,
@@ -127,22 +121,20 @@ export class RiderService {
     });
   }
 
-  /**
-   * 2. Accept an Order
-   * Locks the order to the specific rider and changes status to RIDER_ACCEPTED.
-   */
+   // 2. Accept an Order
+   //Locks the order to the specific rider and changes status to RIDER_ACCEPTED.
   static async acceptOrder(riderId: string, orderId: string) {
     return await prisma.$transaction(async (tx) => {
       // 1. Fetch Rider Details
       const rider = await tx.user.findUnique({ where: { id: riderId } });
       if (!rider) throw new Error("Rider profile not found");
 
-      // ✅ 1. DFA Enforcement (Fetch order first to validate)
+      // 1. DFA Enforcement (Fetch order first to validate)
       const order = await tx.order.findUnique({ where: { id: orderId } });
       if (!order) throw new Error("Order not found");
       OrderStateMachine.validateTransition(order.status, OrderStatus.RIDER_ACCEPTED);
 
-      // 🛑 GATEKEEPER 1: Ensure Rider is not busy with another active order
+      // Ensure Rider is not busy with another active order
       const existingActiveOrder = await tx.order.findFirst({
         where: {
           riderId: riderId,
@@ -157,7 +149,7 @@ export class RiderService {
       const riderName = rider.name || "ChowEazy Rider"; 
       const riderPhone = rider.phone || "";
 
-      // 🛑 GATEKEEPER 2 (The Race Condition Fix): Atomic Update
+      // (The Race Condition Fix): Atomic Update
       // instead of "finding" then "updating", we try to update ONLY IF riderId is null.
       let updatedOrder;
       try {
@@ -177,7 +169,6 @@ export class RiderService {
         });
       } catch (error) {
         // If Prisma throws an error here, it means the 'where' clause failed 
-        // (i.e., riderId was NOT null anymore).
         throw new Error("Too late! This order has just been accepted by another rider.");
       }
 
@@ -192,115 +183,46 @@ export class RiderService {
         ).catch(e => console.error("Failed to send rider accepted email", e));
       }
       
-      // 5. Notify Socket (You likely want this here so the UI updates)
-      return updatedOrder;
-    });
-  }
-
-  /**
-   * 2b. Reject/Unassign Order
-   * If a rider accepts by mistake or cannot fulfill it, they can "reject" it back to the pool.
-   * This resets the order to READY_FOR_PICKUP.
-   */
-  // static async rejectOrder(riderId: string, orderId: string, reason?: string) {
-  //   return await prisma.$transaction(async (tx) => {
-  //     const order = await tx.order.findUnique({ where: { id: orderId } });
-
-  //     if (!order) throw new Error("Order not found");
-      
-  //     // Ensure the rider requesting rejection is the one assigned
-  //     if (order.riderId !== riderId) throw new Error("You are not assigned to this order");
-      
-  //     // Can only reject if it hasn't been picked up yet (Out for Delivery)
-  //     if (order.status !== OrderStatus.RIDER_ACCEPTED) {
-  //       throw new Error("Cannot reject order at this stage. Please contact support.");
-  //     }
-
-  //     // Reset Order to Pool
-  //     const updatedOrder = await tx.order.update({
-  //       where: { id: orderId },
-  //       data: {
-  //         status: OrderStatus.READY_FOR_PICKUP,
-  //         riderId: null, // Remove assignment
-  //       },
-  //       include: { restaurant: true }
-  //     });
-
-  //     // Notify System
-  //     console.log(`⚠️ Rider ${riderId} rejected Order ${order.reference}. Reason: ${reason}`);
-
-
-  //     return updatedOrder;
-  //   });
-  // }
-
-  // ---> NEW METHOD: Handle Pickup & Delivery <---
-  // src/rider/rider.service.ts
-
-  static async comfirmPickup(riderId: string, orderId: string, status: OrderStatus) {
-    return await prisma.$transaction(async (tx) => {
-      const order = await tx.order.findUnique({ 
-          where: { id: orderId },
-          include: { restaurant: true } 
-      });
-      
-      if (!order) throw new Error("Order not found");
-      if (order.riderId !== riderId) throw new Error("Unauthorized");
-      OrderStateMachine.validateTransition(order.status, OrderStatus.OUT_FOR_DELIVERY);
-
-      // 1. Update Order Status
-      const updatedOrder = await tx.order.update({
-        where: { id: orderId },
-        data: { status: OrderStatus.OUT_FOR_DELIVERY },
-        include: { restaurant: true, customer: true }
-      });
-
-      // 2. Calculate Share
-      const vendorShare = calculateVendorShare(
-          Number(updatedOrder.totalAmount), 
-          Number(updatedOrder.deliveryFee)
-      );
-
-      // 3. Handle Transaction (Create OR Update)
-      const existingTx = await tx.transaction.findFirst({
-         where: { orderId: updatedOrder.id, category: TransactionCategory.ORDER_EARNING }
-      });
-
-      if (existingTx) {
-          // 🚨 THE FIX: If it exists but is stuck in PENDING, release it!
-          if (existingTx.status !== TransactionStatus.SUCCESS) {
-             await tx.transaction.update({
-                 where: { id: existingTx.id },
-                 data: { status: TransactionStatus.SUCCESS, amount: vendorShare }
-             });
-          }
-      } else {
-          // Create NEW Success Transaction
-          await tx.transaction.create({
-            data: {
-                userId: updatedOrder.restaurant.ownerId, 
-                amount: vendorShare,
-                type: TransactionType.CREDIT,
-                category: TransactionCategory.ORDER_EARNING,
-                status: TransactionStatus.SUCCESS, // Available immediately
-                description: `Earnings for Order #${updatedOrder.reference}`,
-                orderId: updatedOrder.id,
-                reference: `EARN-${updatedOrder.reference}-${Date.now()}`
-            }
-          });
-      }
-      if (updatedOrder.customer?.email) {
-        sendOrderStatusEmail(
-          updatedOrder.customer.email,
-          updatedOrder.customer.name,
-          updatedOrder.reference,
-          OrderStatus.OUT_FOR_DELIVERY
-        ).catch(e => console.error("Failed to send out for delivery email", e));
-      }
 
       return updatedOrder;
     });
   }
+
+  //NEW METHOD: Handle Pickup & Delivery
+
+  static async comfirmPickup(riderId: string, orderId: string) {
+  return await prisma.$transaction(async (tx) => {
+    // 1. Fetch Order and Verify ownership
+    const order = await tx.order.findUnique({ 
+        where: { id: orderId } 
+    });
+    
+    if (!order) throw new Error("Order not found");
+    if (order.riderId !== riderId) throw new Error("Unauthorized: This isn't your order to pick up");
+
+    // 2. Validate State (Ensure it's actually ready for pickup)
+    OrderStateMachine.validateTransition(order.status, OrderStatus.OUT_FOR_DELIVERY);
+
+    // 3. Update Order Status ONLY
+    const updatedOrder = await tx.order.update({
+      where: { id: orderId },
+      data: { status: OrderStatus.OUT_FOR_DELIVERY },
+      include: { restaurant: true, customer: true }
+    });
+
+    // 4. Notifications (Purely informational)
+    if (updatedOrder.customer?.email) {
+      sendOrderStatusEmail(
+        updatedOrder.customer.email,
+        updatedOrder.customer.name,
+        updatedOrder.reference,
+        OrderStatus.OUT_FOR_DELIVERY
+      ).catch(e => console.error("Failed to send out for delivery email", e));
+    }
+
+    return updatedOrder;
+  });
+}
   
 
   static async confirmDelivery(riderId: string, orderId: string, code: string) {
@@ -367,10 +289,9 @@ export class RiderService {
 
   
 
-  /**
-   * 3. Get Earnings & Wallet Balance
-   * Calculates pending balance and returns transaction history.
-   */
+  
+   // Get Earnings & Wallet Balance
+    //Calculates pending balance and returns transaction history.
   static async getRiderEarnings(riderId: string) {
     // A. Fetch Real Transactions (Available Balance)
     const transactions = await prisma.transaction.findMany({
@@ -420,168 +341,66 @@ export class RiderService {
     };
   }
 
-  /**
-   * 4. Request Payout
-   * Creates a withdrawal request (Debit Transaction).
-   */
-// static async requestPayout(
-//     riderId: string, 
-//     amount: number, 
-//     bankDetails: { bankCode: string; accountNumber: string } // Rider must provide these
-//   ) {
-//     // 1. Check Internal Balance
-//     const { availableBalance } = await this.getRiderEarnings(riderId);
+  
+  // 4. Request Payout
+  //Creates a withdrawal request (Debit Transaction).
+   
+static async requestPayout(userId: string, amount: number, bankDetails: any) {
+  // 1. Validate input (Assuming you use the same schema as vendor or similar)
+ const validData = payoutSchema.parse({ amount, bankDetails });
+  // 2. Fetch current earnings to check available balance
+  const { availableBalance } = await this.getRiderEarnings(userId);
 
-//     if (amount <= 0) throw new Error("Invalid amount");
-//     if (amount < 100) throw new Error("Minimum withdrawal is 100"); // Paystack min is often NGN 100
-//     if (amount > availableBalance) throw new Error("Insufficient funds");
+  if (validData.amount < 1000) throw new Error("Minimum withdrawal is ₦1,000");
+  if (validData.amount > availableBalance) {
+    throw new Error(`Insufficient funds. Available: ₦${availableBalance.toLocaleString()}`);
+  }
 
-//     const reference = `PAYOUT-${Date.now()}-${riderId.slice(0, 4)}`;
+  // 3. Fetch Rider details for notifications
+  const rider = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { name: true, email: true }
+  });
 
-//     return await prisma.$transaction(async (tx) => {
+  if (!rider) throw new Error("Rider not found");
+
+  // 4. Atomic Transaction: Create the Ledger Entry
+  return await prisma.$transaction(async (tx) => {
+    const transaction = await tx.transaction.create({
+      data: {
+        userId,
+        amount: validData.amount,
+        type: TransactionType.DEBIT,
+        category: TransactionCategory.WITHDRAWAL,
+        status: TransactionStatus.PENDING, // Funds are "locked"
+        description: `Manual Payout Request to ${validData.bankDetails.bankName} (${validData.bankDetails.accountNumber})`,
+        reference: `RID-PAY-${Date.now()}`,
+      },
+    });
+
+    // 5. Trigger Notifications (Non-blocking)
+    try {
+      // Alert Admin: "
+      await sendAdminPayoutAlert(rider.name, validData.amount, validData.bankDetails);
       
-//       // 2. Verify Bank Account (Resolve Name)
-//       const accountInfo = await PaymentService.resolveAccount(
-//         bankDetails.accountNumber, 
-//         bankDetails.bankCode
-//       );
+      // Notify Rider: "We've received your request"
+      if (rider.email) {
+        await sendPayoutRequestEmail({
+          email: rider.email,
+          ownerName: rider.name,
+          restaurantName: "Rider Wallet", // Adjusting template usage
+          amount: validData.amount,
+          bankName: validData.bankDetails.bankName,
+          accountNumber: validData.bankDetails.accountNumber
+        });
+      }
+    } catch (e: any) {
+      console.error("Notification failed, but transaction recorded:", e.message);
+    }
 
-//       // 3. Create Paystack Recipient
-//       // Note: In a production app, you might save this 'recipient_code' to the User model 
-//       // so you don't generate it every time.
-//       const recipientCode = await PaymentService.createTransferRecipient(
-//         accountInfo.account_name,
-//         bankDetails.accountNumber,
-//         bankDetails.bankCode
-//       );
-
-//       // 4. Create Pending Transaction Record (Lock the funds internally)
-//       const transaction = await tx.transaction.create({
-//         data: {
-//           userId: riderId,
-//           amount: amount, // Stored as positive number, logic handles it as debit
-//           type: TransactionType.DEBIT,
-//           category: TransactionCategory.WITHDRAWAL,
-//           status: TransactionStatus.PENDING, // Pending until Paystack accepts
-//           description: `Payout to ${accountInfo.account_name}`,
-//           reference: reference
-//         }
-//       });
-
-//       // 5. Trigger Paystack Transfer
-//       // If this fails, the Prisma Transaction will rollback, so no money is lost internally.
-//       const transferResult = await PaymentService.initiateTransfer(
-//         amount,
-//         recipientCode,
-//         reference,
-//         "ChowEazy Rider Payout"
-//       );
-
-//       // 6. Update Transaction Status based on Paystack Response
-//       // Paystack transfers are usually "queued" (OTP) or "success" (Instant).
-//       // If queued, we keep it PENDING. If success, we mark SUCCESS.
-//       let finalStatus: TransactionStatus = TransactionStatus.PENDING;
-      
-//       if (transferResult.status === "success") {
-//         finalStatus = TransactionStatus.SUCCESS;
-//       } else if (transferResult.status === "failed") {
-//           throw new Error("Paystack rejected the transfer");
-//       }
-
-//       const updatedTransaction = await tx.transaction.update({
-//         where: { id: transaction.id },
-//         data: { 
-//             status: finalStatus,
-//             // You could store the transfer_code in description or a new field if needed
-//             description: `Payout to ${accountInfo.account_name} (Ref: ${transferResult.transfer_code})`
-//         }
-//       });
-
-//       return updatedTransaction;
-//     });
-//   }
-
-// static async requestPayout(
-//     riderId: string, 
-//     amount: number, 
-//     bankDetails: { bankCode: string; accountNumber: string }
-//   ) {
-//     // 1. Check Internal Balance
-//     const { availableBalance } = await this.getRiderEarnings(riderId);
-
-//     if (amount <= 0) throw new Error("Invalid amount");
-//     if (amount < 100) throw new Error("Minimum withdrawal is 100"); 
-//     if (amount > availableBalance) throw new Error("Insufficient funds");
-
-//     const reference = `PAYOUT-${Date.now()}-${riderId.slice(0, 4)}`;
-
-//     return await prisma.$transaction(async (tx) => {
-      
-//       // 2. Resolve Bank Account (This usually works on Starter Accounts)
-//       // If this fails, the account number is wrong, so we SHOULD throw an error here.
-//       const accountInfo = await PaymentService.resolveAccount(
-//         bankDetails.accountNumber, 
-//         bankDetails.bankCode
-//       );
-
-//       // 3. Create the Transaction Record (Lock the funds)
-//       // We mark it as PENDING initially.
-//       const transaction = await tx.transaction.create({
-//         data: {
-//           userId: riderId,
-//           amount: amount, 
-//           type: TransactionType.DEBIT,
-//           category: TransactionCategory.WITHDRAWAL,
-//           status: TransactionStatus.PENDING, 
-//           description: `Payout to ${accountInfo.account_name} (${accountInfo.account_number})`,
-//           reference: reference
-//         }
-//       });
-
-//       // 4. Try Automatic Payout (But don't crash if it fails)
-//       try {
-//         const recipientCode = await PaymentService.createTransferRecipient(
-//           accountInfo.account_name,
-//           bankDetails.accountNumber,
-//           bankDetails.bankCode
-//         );
-
-//         const transferResult = await PaymentService.initiateTransfer(
-//           amount,
-//           recipientCode,
-//           reference,
-//           "ChowEazy Payout"
-//         );
-
-//         // If Paystack accepts it properly
-//         if (transferResult.status === "success" || transferResult.status === "otp") {
-//              // In a real live app, you might wait for a webhook to confirm success.
-//              // But for now, we assume success if the API didn't error.
-//              // Ideally, keep it PENDING until webhook, but for MVP:
-//              // await tx.transaction.update({ ... status: SUCCESS ... })
-//         }
-
-//       } catch (error: any) {
-//         // ⚠️ HERE IS THE FIX:
-//         // We catch the "Starter Business" error here.
-//         console.warn(`⚠️ Automatic Payout Failed (Falling back to Manual): ${error.message}`);
-        
-//         // We update the description so the Admin knows to pay manually
-//         await tx.transaction.update({
-//             where: { id: transaction.id },
-//             data: { 
-//                 description: `MANUAL PAYOUT REQUIRED: ${accountInfo.account_name} - ${accountInfo.account_number} (${error.message})` 
-//             }
-//         });
-
-//         // WE DO NOT THROW THE ERROR. 
-//         // We let the function return the 'transaction' object.
-//         // This means the Rider App receives a "200 OK" and the UI updates.
-//       }
-
-//       return transaction;
-//     });
-//   }
+    return transaction;
+  });
+}
 
   static async getDeliveryHistory(riderId: string) {
     return prisma.order.findMany({

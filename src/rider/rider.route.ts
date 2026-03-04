@@ -375,35 +375,6 @@ router.get("/history", RiderController.getHistory);
 // PAYOUT & STATUS
 // ─────────────────────────────────────────────
 
-/**
- * @swagger
- * /rider/payout:
- *   post:
- *     summary: Request a payout from the rider's wallet
- *     description: |
- *       Attempts an automatic bank transfer via Paystack. If the automatic transfer fails
- *       (e.g. due to account restrictions), the request is logged for manual processing
- *       and the rider still receives a `201` response — the UI will update normally.
- *
- *       Minimum withdrawal: ₦100. Amount must not exceed available balance.
- *     tags: [Riders]
- *     security:
- *       - bearerAuth: []
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required:
- *               - amount
- *               - bankCode
- *               - accountNumber
- *             properties:
- *               amount:
- *                 type: number
- *                 description: Amount to withdraw in Naira (min ₦100)
- *                 example: 5000
- */
+router.post("/payout", RiderController.requestPayout)
 
 export default router;

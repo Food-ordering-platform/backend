@@ -287,12 +287,6 @@ if (!restaurant || !restaurant.owner) throw new Error("Restaurant or Owner Not F
         status: TransactionStatus.PENDING, // It stays PENDING until Admin approves
         description: `Manual Payout Request to ${validData.bankDetails.bankName} (${validData.bankDetails.accountNumber})`,
         reference: `MAN-PAY-${Date.now()}`,
-        // Storing bank details in metadata or description for admin to see
-        metadata: {
-          accountNumber: validData.bankDetails.accountNumber,
-          bankName: validData.bankDetails.bankName,
-          accountName: validData.bankDetails.accountName
-        }
       },
     });
 

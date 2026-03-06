@@ -379,4 +379,6 @@ router.post("/payout", authMiddleware, RiderController.requestPayout)
 
 router.get("/transactions", authMiddleware, RiderController.getTransactions)
 
+router.patch('/status', authMiddleware, RiderController.updateStatus)
+
 export default router;

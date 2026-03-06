@@ -171,11 +171,23 @@ export class VendorService {
 
     let newPaymentStatus = order.paymentStatus;
 
-    if (order.paymentStatus === "PAID") {
-      await PaymentService.refund(order.reference).catch((e) => console.error("Refund failed", e));
-      newPaymentStatus = "REFUNDED";
+   if (order.paymentStatus === "PAID") {
+    try {
+      console.log(`Initiating Paystack refund for reference: ${order.reference}`);
+      
+      const refundResponse = await PaymentService.refund(order.reference);
+      
+      // If we reach here, the API call was successful
+      newPaymentStatus = "REFUNDED"; 
+      console.log("Paystack refund successful:", refundResponse.data?.status);
+    } catch (e: any) {
+      // If the refund fails, we do NOT set it to "REFUNDED"
+      console.error("CRITICAL: Paystack Refund Failed:", e.message);
+      
+      // throw an error here to stop the whole cancellation,
+      throw new Error(`Refund failed: ${e.message}. Order not cancelled.`);
     }
-
+  }
     const updatedOrder = await prisma.order.update({
       where: { id: orderId },
       data: { status: OrderStatus.CANCELLED, paymentStatus: newPaymentStatus },

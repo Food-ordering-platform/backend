@@ -230,16 +230,7 @@ export class AuthService {
 
 
   // ------------------ OTP UTILS ------------------
-  static async generateOtp(userId: string) {
-    const code = randomInt(100000, 999999).toString();
-    const expiresAt = dayjs().add(30, "minute").toDate();
 
-    await prisma.otp.create({
-      data: { code, userId, expiresAt },
-    });
-
-    return code;
-  }
 
   static async verifyOtp(email: string, code: string) {
     const user = await prisma.user.findUnique({ where: { email } });
@@ -351,5 +342,16 @@ export class AuthService {
       where: { id: userId },
       data: { pushToken: token }
     });
+  }
+
+    static async generateOtp(userId: string) {
+    const code = randomInt(100000, 999999).toString();
+    const expiresAt = dayjs().add(30, "minute").toDate();
+
+    await prisma.otp.create({
+      data: { code, userId, expiresAt },
+    });
+
+    return code;
   }
 }

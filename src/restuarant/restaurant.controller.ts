@@ -22,35 +22,39 @@ export class RestaurantController {
 
   // ===== Restaurant Profile Management =====
   
-  static async createRestaurant(req: Request, res: Response) {
-    try {
-      const authHeader = req.headers.authorization;
-      if (!authHeader) throw new Error("No token Provided");
-      const token = authHeader.split(" ")[1];
-      const decoded: any = jwt.verify(token, process.env.JWT_SECRET as string);
+static async createRestaurant(req: Request, res: Response) {
+  try {
+    // 🟢 Middleware already verified the token! 
+    // It usually attaches the data to req.user
+    const ownerId = req.user?.id; 
 
-      const ownerId = decoded.userId;
-      const restaurantData = RestaurantController.parseRestaurantBody(req.body);
-
-      const restaurant = await RestaurantService.createRestaurant(
-        ownerId,
-        restaurantData,
-        req.file 
-      );
-
-      res.status(201).json({
-        success: true,
-        message: "Restaurant Profile Created Successfully",
-        data: restaurant,
-      });
-    } catch (err: any) {
-      console.error("Error Creating Restaurant:", err);
-      res.status(400).json({
-        success: false,
-        message: err.message || "Failed to create restaurant",
-      });
+    if (!ownerId) {
+      return res.status(401).json({ success: false, message: "Unauthorized" });
     }
+
+    // Process the body
+    const restaurantData = RestaurantController.parseRestaurantBody(req.body);
+
+    // Call the service
+    const restaurant = await RestaurantService.createRestaurant(
+      ownerId,
+      restaurantData,
+      req.file 
+    );
+
+    res.status(201).json({
+      success: true,
+      message: "Restaurant Profile Created Successfully",
+      data: restaurant,
+    });
+  } catch (err: any) {
+    console.error("Error Creating Restaurant:", err);
+    res.status(err.status || 400).json({
+      success: false,
+      message: err.message || "Failed to create restaurant",
+    });
   }
+}
 
   static async getAllRestaurants(req: Request, res: Response) {
     try {

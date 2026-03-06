@@ -131,7 +131,7 @@ export class AuthService {
       where: { email },
     });
 
-    // 🛑 BLOCKER: If user doesn't exist AND they didn't accept terms (via Signup page)
+    //  If user doesn't exist AND they didn't accept terms (via Signup page)
     if (!user && !termsAccepted) {
       throw new Error("Account not found. Please use the Sign Up page to create an account.");
     }
@@ -250,7 +250,7 @@ export class AuthService {
     });
     if (!otpRecord) throw new Error("Invalid or expired OTP");
 
-    // 🟢 NEW LOGIC: 
+    // 
     // 1. Mark Email as Verified (Allows Login)
     // 2. Only Auto-Approve CUSTOMERS. Riders remain Pending.
 
@@ -352,5 +352,4 @@ export class AuthService {
       data: { pushToken: token }
     });
   }
-
 }

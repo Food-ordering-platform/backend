@@ -196,8 +196,10 @@ export class OrderService {
   }
 
   // ✅ UPDATED: Sends email with REAL DB reference
-  static async processSuccessfulPayment(reference: string) {
-    const order = await prisma.order.findUnique({
+ static async processSuccessfulPayment(reference: string) {
+  return await prisma.$transaction(async (tx) => {
+    // 1️⃣ Lock the order row by using `findUnique` inside the transaction
+    const order = await tx.order.findUnique({
       where: { reference },
       include: {
         restaurant: { include: { owner: true } },
@@ -206,19 +208,22 @@ export class OrderService {
     });
 
     if (!order) return null;
+
+    // 2️⃣ Idempotency check
     if (order.paymentStatus === "PAID") return order;
 
-    const updatedOrder = await prisma.order.update({
+    // 3️⃣ Update order status inside transaction
+    const updatedOrder = await tx.order.update({
       where: { id: order.id },
       data: { paymentStatus: "PAID" },
     });
 
+    // 4️⃣ Send notifications (outside DB update, but still part of transaction logic)
     if (order.customer && order.customer.email) {
-      // ✅ FIX: Use order.reference
       sendOrderStatusEmail(
         order.customer.email,
         order.customer.name,
-        order.reference, // <--- THE FIX
+        order.reference,
         "PENDING",
       ).catch((e) => console.log("Payment success email failed", e));
     }
@@ -231,8 +236,10 @@ export class OrderService {
         { orderId: order.id },
       );
     }
+
     return updatedOrder;
-  }
+  });
+}
 
   static async getOrdersByCustomer(customerId: string) {
     return prisma.order.findMany({

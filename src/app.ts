@@ -6,6 +6,8 @@ import pgSession from "connect-pg-simple";
 import { Pool } from "pg";
 import compression from "compression"
 import { setupSwagger } from './swagger';
+import * as Sentry from "@sentry/node"; // Sentry import
+import { nodeProfilingIntegration } from "@sentry/profiling-node";
 
 import authRouter from "./auth/auth.route";
 import restaurantRouter from "./restuarant/restaurant.route";
@@ -16,6 +18,18 @@ import riderRoute from "./rider/rider.route";
 import vendorRoutes from "./vendor/vendor.route"
 
 const app = express();
+
+
+// 1. Initialize Sentry early
+Sentry.init({
+  dsn: process.env.SENTRY_DSN,
+  integrations: [
+    nodeProfilingIntegration(),
+  ],
+  tracesSampleRate: 1.0,
+  profilesSampleRate: 1.0,
+});
+
 
 app.set("trust proxy", 1) //Tells express to trust the load balancer
 // 1. Setup Session Store (Postgres)
@@ -62,6 +76,10 @@ app.use("/api/payment", paymentRouter);
 app.use("/api/admin", adminRouter);
 app.use("/api/rider", riderRoute);
 app.use("/api/vendor", vendorRoutes)
+
+// 6. SENTRY ERROR HANDLER (New v8 Syntax)
+// Must be placed after all controllers/routes and before your custom error handler
+Sentry.setupExpressErrorHandler(app);
 
 // 6. Global Error Handler
 app.use(

@@ -11,14 +11,14 @@ export const sendPushToRiders = async (title: string, body: string, data: any = 
     const riders = await prisma.user.findMany({
       where: {
         role: 'RIDER',                 // Must be a rider
-        isVerified: true,              // ✅ Only approved riders
-        pushToken: { not: null },
-        isOnline: true,                // And currently online
+        isVerified: true,              // Only approved riders
+        pushToken: { not: null },      // And currently online
+        isOnline: true,               
       },
       select: { id: true, name: true, pushToken: true } // Select name for debugging
     });
 
-    console.log(`📋 Found ${riders.length} riders with tokens.`);
+    console.log(`Found ${riders.length} riders with tokens.`);
 
     const messages = [];
     for (const rider of riders) {
@@ -50,12 +50,12 @@ export const sendPushToRiders = async (title: string, body: string, data: any = 
         const ticketChunk = await expo.sendPushNotificationsAsync(chunk);
 
         // 🔍 LOG EXPO RESPONSE
-        console.log("🎫 Expo Ticket Response:", JSON.stringify(ticketChunk));
+        console.log("Expo Ticket Response:", JSON.stringify(ticketChunk));
 
         // Check for errors in the tickets
         ticketChunk.forEach((ticket: any) => {
           if (ticket.status === 'error') {
-            console.error(`🔴 Expo Error: ${ticket.message} (${ticket.details?.error})`);
+            console.error(`Expo Error: ${ticket.message} (${ticket.details?.error})`);
             // If error is 'DeviceNotRegistered', the token is dead.
           } else {
 
@@ -63,10 +63,9 @@ export const sendPushToRiders = async (title: string, body: string, data: any = 
         });
 
       } catch (error) {
-
       }
     }
   } catch (error) {
-    console.error("❌ Push Notification System Error:", error);
+    console.error(" Push Notification System Error:", error);
   }
 };

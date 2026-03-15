@@ -1,18 +1,9 @@
-import axios from "axios";
+import { emailQueue } from '../../jobs/email.queue';
+import * as Sentry from '@sentry/node';
 
-// Debug check
-console.log("📧 Initializing Remote Mailer (Vercel Proxy)...");
-const EMAIL_URL = process.env.EMAIL_API_URL;
-
-if (!EMAIL_URL) {
-  console.warn("⚠️ VERCEL_EMAIL_API_URL is missing in .env! Emails will fail.");
-}
-
-// We mock the 'mailer' object just in case some other file tries to import it directly.
-// But mostly we rely on the sendEmail function below.
 export const mailer = {
   verify: (cb: any) => {
-    console.log("✅ Remote Mailer Ready (No local connection needed).");
+    console.log("✅ BullMQ/Resend Mailer Ready.");
     if (cb) cb(null, true);
   },
 };
@@ -26,25 +17,25 @@ export async function sendEmail({
   subject: string;
   html: string;
 }) {
-  if (!EMAIL_URL) {
-    throw new Error("Cannot send email: VERCEL_EMAIL_API_URL is undefined");
-  }
-
   try {
-    console.log(`📨 Proxying email to Vercel: ${to}`);
+    console.log(`📨 Queuing email to: ${to}`);
 
-    const response = await axios.post(EMAIL_URL, {
-      to,
-      subject,
-      html,
+    // Add job to queue with retry logic
+    const job = await emailQueue.add('sendEmailJob', { to, subject, html }, {
+      attempts: 3, // Retry 3 times if it fails
+      backoff: {
+        type: 'exponential',
+        delay: 2000, // 2s, 4s, 8s
+      },
+      removeOnComplete: true, // Keep Redis clean
+      removeOnFail: false, // Keep failed jobs for inspection
     });
 
-    console.log(`✅ Email sent via Vercel! ID: ${response.data.id}`);
-    return response.data;
+    console.log(`✅ Email queued successfully! Job ID: ${job.id}`);
+    return { id: job.id };
   } catch (error: any) {
-    // Better error logging
-    const errorMsg = error.response?.data?.error || error.message;
-    console.error(`❌ FATAL EMAIL PROXY ERROR to ${to}:`, errorMsg);
-    throw new Error(`Email Proxy Failed: ${errorMsg}`);
+    console.error(`❌ FATAL ERROR QUEUEING EMAIL to ${to}:`, error.message);
+    Sentry.captureException(error);
+    throw new Error(`Queue Failed: ${error.message}`);
   }
 }

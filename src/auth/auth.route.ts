@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { AuthController } from "./auth.controller";
 import { authMiddleware } from "./auth.middleware";
+import { authLimiter } from "../config/rate-limit";
 
 const router = Router();
 
@@ -73,7 +74,7 @@ const router = Router();
  *             schema:
  *               $ref: '#/components/schemas/Error'
  */
-router.post("/register", AuthController.register);
+router.post("/register", authLimiter, AuthController.register);
 
 /**
  * @swagger
@@ -127,7 +128,7 @@ router.post("/register", AuthController.register);
  *             schema:
  *               $ref: '#/components/schemas/Error'
  */
-router.post("/login", AuthController.login);
+router.post("/login", authLimiter, AuthController.login);
 
 /**
  * @swagger
@@ -335,7 +336,7 @@ router.patch("/profile", authMiddleware, AuthController.updateProfile);
  *             schema:
  *               $ref: '#/components/schemas/Error'
  */
-router.post("/verify-otp", AuthController.verifyOtp);
+router.post("/verify-otp", authLimiter, AuthController.verifyOtp);
 
 /**
  * @swagger
@@ -378,7 +379,7 @@ router.post("/verify-otp", AuthController.verifyOtp);
  *             schema:
  *               $ref: '#/components/schemas/Error'
  */
-router.post("/forgot-password", AuthController.forgotPassword);
+router.post("/forgot-password", authLimiter, AuthController.forgotPassword);
 
 /**
  * @swagger
@@ -425,7 +426,7 @@ router.post("/forgot-password", AuthController.forgotPassword);
  *             schema:
  *               $ref: '#/components/schemas/Error'
  */
-router.post("/verify-reset-otp", AuthController.verifyResetOtp);
+router.post("/verify-reset-otp", authLimiter, AuthController.verifyResetOtp);
 
 /**
  * @swagger
@@ -474,7 +475,7 @@ router.post("/verify-reset-otp", AuthController.verifyResetOtp);
  *             schema:
  *               $ref: '#/components/schemas/Error'
  */
-router.post("/reset-password", AuthController.resetPassword);
+router.post("/reset-password", authLimiter, AuthController.resetPassword);
 
 /**
  * @swagger

@@ -1,11 +1,19 @@
 import { PrismaClient } from "@prisma/client";
 import { uploadToCloudinary } from "../cloudinary/upload";
+import { redisClient } from "../config/redis";
 
 const prisma = new PrismaClient();
 
 export class RestaurantService {
-  // ===== Restaurant Profile =====
+  // ===== Caching Keys =====
+  private static CACHE_KEYS = {
+    ALL_RESTAURANTS: "restaurants:all",
+    RESTAURANT_BY_ID: (id: string) => `restaurant:${id}`,
+    MENU_ITEMS: (id: string) => `restaurant:${id}:menu`,
+  };
   
+  // ===== Restaurant Profile =====
+
   static async createRestaurant(
     ownerId: string,
     data: any,
@@ -22,7 +30,7 @@ export class RestaurantService {
       imageUrl = uploadResult.secure_url || uploadResult.url;
     }
 
-    return await prisma.restaurant.create({
+    const newRestaurant = await prisma.restaurant.create({
       data: {
         ownerId,
         name: data.name,
@@ -37,34 +45,49 @@ export class RestaurantService {
         longitude: data.longitude,
       },
     });
+
+    // 🧹 Invalidate the "all restaurants" cache since a new one was added
+    await redisClient.del(this.CACHE_KEYS.ALL_RESTAURANTS);
+
+    return newRestaurant;
   }
 
   static async getAllRestaurant() {
-    return await prisma.restaurant.findMany({
+    // 1. Check Redis Cache First
+    const cachedData = await redisClient.get(this.CACHE_KEYS.ALL_RESTAURANTS);
+    if (cachedData) {
+      console.log("⚡ Serving restaurants from Redis Cache");
+      return JSON.parse(cachedData);
+    }
+
+    // 2. If not in cache, fetch from DB
+    console.log("🐌 Serving restaurants from Database");
+    const restaurants = await prisma.restaurant.findMany({
       select: {
-        id: true,
-        name: true,
-        address: true,
-        phone: true,
-        imageUrl: true,
-        prepTime: true,
-        minimumOrder: true,
-        isOpen: true,
+        id: true, name: true, address: true, phone: true,
+        imageUrl: true, prepTime: true, minimumOrder: true, isOpen: true,
       },
     });
+
+    // 3. Save to Cache for 1 hour (3600 seconds)
+    await redisClient.setex(this.CACHE_KEYS.ALL_RESTAURANTS, 3600, JSON.stringify(restaurants));
+    return restaurants;
   }
 
   static async getRestaurantById(id: string) {
-    return await prisma.restaurant.findUnique({
+    const cacheKey = this.CACHE_KEYS.RESTAURANT_BY_ID(id);
+    const cached = await redisClient.get(cacheKey);
+    if (cached) return JSON.parse(cached);
+
+    const restaurant = await prisma.restaurant.findUnique({
       where: { id },
-      include: {
-        categories: {
-          include: {
-            menuItems: true,
-          },
-        },
-      },
+      include: { categories: { include: { menuItems: true } } },
     });
+
+    if (restaurant) {
+      await redisClient.setex(cacheKey, 3600, JSON.stringify(restaurant));
+    }
+    return restaurant;
   }
 
   static async updateRestaurant(
@@ -86,19 +109,32 @@ export class RestaurantService {
       updateData.imageUrl = imageUrl;
     }
 
-    return await prisma.restaurant.update({
+    const updatedRestaurant = await prisma.restaurant.update({
       where: { id },
       data: updateData,
     });
+
+    // 🧹 Invalidate both the specific restaurant cache and the general list
+    await redisClient.del(this.CACHE_KEYS.RESTAURANT_BY_ID(id));
+    await redisClient.del(this.CACHE_KEYS.ALL_RESTAURANTS);
+
+    return updatedRestaurant;
   }
 
   // ===== Menu Items =====
   
   static async getMenuItems(restaurantId: string) {
-    return await prisma.menuItem.findMany({
+    const cacheKey = this.CACHE_KEYS.MENU_ITEMS(restaurantId);
+    const cached = await redisClient.get(cacheKey);
+    if (cached) return JSON.parse(cached);
+
+    const items = await prisma.menuItem.findMany({
       where: { restaurantId },
       include: { category: true },
     });
+
+    await redisClient.setex(cacheKey, 3600, JSON.stringify(items));
+    return items;
   }
 
   static async addMenuItem(
@@ -147,7 +183,7 @@ export class RestaurantService {
       throw new Error("Category is required");
     }
 
-    return await prisma.menuItem.create({
+    const newItem = await prisma.menuItem.create({
       data: {
         name: data.name,
         description: data.description,
@@ -158,29 +194,52 @@ export class RestaurantService {
         categoryId,
       },
     });
+
+    // 🧹 Invalidate the menu cache and the restaurant cache (since it includes menu items)
+    await redisClient.del(this.CACHE_KEYS.MENU_ITEMS(restaurantId));
+    await redisClient.del(this.CACHE_KEYS.RESTAURANT_BY_ID(restaurantId));
+
+    return newItem;
   }
 
   static async updateMenuItem(id: string, data: any) {
-    return await prisma.menuItem.update({
+    const updatedItem = await prisma.menuItem.update({
       where: { id },
       data,
     });
+
+    // 🧹 Invalidate caches using the restaurantId from the updated item
+    await redisClient.del(this.CACHE_KEYS.MENU_ITEMS(updatedItem.restaurantId));
+    await redisClient.del(this.CACHE_KEYS.RESTAURANT_BY_ID(updatedItem.restaurantId));
+
+    return updatedItem;
   }
 
   static async deleteMenuItem(id: string) {
-    return await prisma.menuItem.delete({
+    const deletedItem = await prisma.menuItem.delete({
       where: { id },
     });
+
+    // 🧹 Invalidate caches using the restaurantId from the deleted item
+    await redisClient.del(this.CACHE_KEYS.MENU_ITEMS(deletedItem.restaurantId));
+    await redisClient.del(this.CACHE_KEYS.RESTAURANT_BY_ID(deletedItem.restaurantId));
+
+    return deletedItem;
   }
 
   static async toggleMenuItemAvailability(id: string) {
     const item = await prisma.menuItem.findUnique({ where: { id } });
     if (!item) throw new Error("Menu item not found");
 
-    return await prisma.menuItem.update({
+    const updatedItem = await prisma.menuItem.update({
       where: { id },
       data: { available: !item.available },
     });
-  }
 
+    // 🧹 Invalidate caches using the restaurantId
+    await redisClient.del(this.CACHE_KEYS.MENU_ITEMS(item.restaurantId));
+    await redisClient.del(this.CACHE_KEYS.RESTAURANT_BY_ID(item.restaurantId));
+
+    return updatedItem;
+  }
 }

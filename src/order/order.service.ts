@@ -15,7 +15,7 @@ import { sendPushNotification } from "../utils/notification";
 import { calculateDistance, calculateDeliveryFee } from "../utils/haversine";
 import { PRICING } from "../config/pricing";
 import { OrderStateMachine } from "../utils/order-state-machine";
-import { sendPushToRiders } from "../utils/push-notification";
+import { sendPushToRiders, sendPushToVendor } from "../utils/push-notification";
 
 const prisma = new PrismaClient();
 
@@ -229,11 +229,10 @@ export class OrderService {
     }
 
     if (order.restaurant?.owner?.pushToken) {
-      sendPushNotification(
+      sendPushToVendor(
         order.restaurant.owner.pushToken,
         "New Order Paid! 💰",
-        `Order #${order.reference.slice(0, 4).toUpperCase()} confirmed. ₦${order.totalAmount}`,
-        { orderId: order.id },
+        `Order #${order.reference.slice(0, 4).toUpperCase()}`,
       );
     }
 

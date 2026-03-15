@@ -2,6 +2,7 @@ import { PrismaClient } from "@prisma/client";
 import { uploadToCloudinary } from "../cloudinary/upload";
 import { redisClient } from "../config/redis";
 import slugify from "slugify";
+import { sendRestaurantVerificationPendingEmail } from "../utils/email/email.service";
 
 const prisma = new PrismaClient();
 
@@ -62,6 +63,14 @@ export class RestaurantService {
 
     // 🧹 Invalidate the "all restaurants" cache since a new one was added
     await redisClient.del(this.CACHE_KEYS.ALL_RESTAURANTS);
+
+    const owner = await prisma.user.findUnique({ where: { id: ownerId } });
+    const recipientEmail = owner?.email || data.email;
+    
+    if (recipientEmail) {
+      // Don't await this so it doesn't slow down the frontend response
+      sendRestaurantVerificationPendingEmail(recipientEmail, newRestaurant.name).catch(console.error);
+    }
 
     return newRestaurant;
   }

@@ -280,3 +280,40 @@ export async function sendPayoutRequestEmail({
     console.error("❌ Payout Processing Email Failed:", err.message);
   }
 }
+
+
+// --- RESTAURANT VERIFICATION PENDING ---
+export async function sendRestaurantVerificationPendingEmail(
+  email: string,
+  restaurantName: string,
+) {
+  console.log(`[EmailService] Sending Verification Pending Email to: ${email}`); 
+  try {
+    const html = generateEmailHTML(
+      "Verification Pending ⏳",
+      `
+        <p>Thanks, <b>${restaurantName}</b>! We've received your application.</p>
+        
+        <div style="background:#FFFBEB; border: 1px solid #FEF3C7; padding:20px; border-radius:12px; margin:20px 0;">
+          <div style="font-size:16px; color:#92400E; line-height: 1.5;">
+            To ensure quality on ChowEazy, our team manually reviews every new vendor. 
+            This usually takes <b style="color:#B45309;">24-48 hours</b>.
+          </div>
+        </div>
+
+        <p>You will receive an email once your restaurant is approved and live on the platform.</p>
+        <p>If you have any questions in the meantime, feel free to reply to this email or contact support.</p>
+      `,
+      "🏪"
+    );
+
+    await sendEmail({
+      to: email,
+      subject: "⏳ Application Received - Under Review",
+      html,
+    });
+    
+  } catch (err: any) {
+    console.error("❌ Verification Pending Email Failed:", err.message);
+  }
+}

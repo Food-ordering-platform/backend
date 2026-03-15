@@ -1,6 +1,7 @@
 import { PrismaClient } from "@prisma/client";
 import { uploadToCloudinary } from "../cloudinary/upload";
 import { redisClient } from "../config/redis";
+import slugify from "slugify";
 
 const prisma = new PrismaClient();
 
@@ -9,6 +10,7 @@ export class RestaurantService {
   private static CACHE_KEYS = {
     ALL_RESTAURANTS: "restaurants:all",
     RESTAURANT_BY_ID: (id: string) => `restaurant:${id}`,
+    RESTAURANT_BY_SLUG: (slug: string) => `restaurant:slug:${slug}`,
     MENU_ITEMS: (id: string) => `restaurant:${id}:menu`,
   };
   
@@ -24,6 +26,17 @@ export class RestaurantService {
       throw new Error("You already have a restaurant");
     }
 
+    // Generate base slug from the restaurant name
+    let baseSlug = slugify(data.name, { lower: true, strict: true });
+    let slug = baseSlug;
+    let counter = 1;
+
+    // Ensure the slug is unique in the database
+    while (await prisma.restaurant.findUnique({ where: { slug } })) {
+      slug = `${baseSlug}-${counter}`;
+      counter++;
+    }
+
     let imageUrl = undefined;
     if (file) {
       const uploadResult = await uploadToCloudinary(file);
@@ -33,6 +46,7 @@ export class RestaurantService {
     const newRestaurant = await prisma.restaurant.create({
       data: {
         ownerId,
+        slug,
         name: data.name,
         address: data.address,
         phone: data.phone,
@@ -72,6 +86,34 @@ export class RestaurantService {
     // 3. Save to Cache for 1 hour (3600 seconds)
     await redisClient.setex(this.CACHE_KEYS.ALL_RESTAURANTS, 3600, JSON.stringify(restaurants));
     return restaurants;
+  }
+
+  // 2. Add a new method to fetch by slug for the customer-facing frontend
+  static async getRestaurantBySlug(slug: string) {
+    const cacheKey = this.CACHE_KEYS.RESTAURANT_BY_SLUG(slug);
+    const cached = await redisClient.get(cacheKey);
+    if (cached) return JSON.parse(cached);
+
+    const restaurant = await prisma.restaurant.findUnique({
+      where: { slug },
+      // Select exactly what you want the customer to see, hiding sensitive info
+      select: {
+        id: true, // Internal React needs the ID for keys and cart logic, but it won't be in the URL
+        slug: true,
+        name: true,
+        address: true,
+        imageUrl: true,
+        prepTime: true,
+        minimumOrder: true,
+        isOpen: true,
+        categories: { include: { menuItems: true } }
+      }
+    });
+
+    if (restaurant) {
+      await redisClient.setex(cacheKey, 3600, JSON.stringify(restaurant));
+    }
+    return restaurant;
   }
 
   static async getRestaurantById(id: string) {

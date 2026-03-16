@@ -6,19 +6,6 @@ import { OrderService } from "../order/order.service";
 
 const prisma = new PrismaClient();
 
-function sortKeysDeep(obj: any): any {
-  if (Array.isArray(obj)) return obj.map(sortKeysDeep);
-  if (obj !== null && typeof obj === "object") {
-    return Object.keys(obj)
-      .sort()
-      .reduce((acc, key) => {
-        acc[key] = sortKeysDeep(obj[key]);
-        return acc;
-      }, {} as any);
-  }
-  return obj;
-}
-
 export class PaymentController {
   // =================================================================
   // 1. Verify Payment (Called by Frontend after redirect)

@@ -46,7 +46,7 @@ app.use(compression())
 
 app.use(
   cors({
-    origin: ["http://localhost:3000", "https://choweazy.vercel.app", "http://localhost:8081", "https://choweazy-vendor.vercel.app", "https://choweazy-rider.vercel.app"],
+    origin: ["http://localhost:3000", "https://choweazy.com", "https://staging.choweazy.com", "http://localhost:8081"],
     methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
     preflightContinue: false,

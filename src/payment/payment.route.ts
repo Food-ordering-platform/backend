@@ -160,7 +160,7 @@ router.post(
  *             schema:
  *               $ref: '#/components/schemas/Error'
  */
-router.get("/verify/:reference", authMiddleware, PaymentController.verify);
+// router.get("/verify/:reference", authMiddleware, PaymentController.verify);
 
 /**
  * @swagger

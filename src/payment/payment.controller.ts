@@ -113,10 +113,16 @@ static async webhook(req: Request, res: Response) {
     const signature = req.headers["x-aggregator-signature"] as string;
     const fullSecret = process.env.XOROPAY_SECRET_KEY!;
     
-    // 🛑 XOROPAY REQUIREMENT: Use the third segment of the key
+    //XOROPAY REQUIREMENT: Use the third segment of the key
     const webhookSecret = fullSecret.split("_")[2];
 
     const rawBody = (req as any).rawBody;
+
+    console.log("=== WEBHOOK DEBUG START ===");
+    console.log("1. Full Secret:", fullSecret);
+    console.log("2. Extracted Webhook Secret:", webhookSecret);
+    console.log("3. Signature Header from XoroPay:", signature);
+    console.log("4. Has Raw Body?", !!rawBody);
 
     if (!rawBody || !signature) {
       return res.status(400).json({ error: "Missing signature or body" });

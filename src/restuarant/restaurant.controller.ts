@@ -97,6 +97,32 @@ static async createRestaurant(req: Request, res: Response) {
     }
   }
 
+  static async getRestaurantBySlug(req: Request, res: Response) {
+    try {
+      const { slug } = req.params;
+      
+      const restaurant = await RestaurantService.getRestaurantBySlug(slug);
+
+      if (!restaurant) {
+        return res.status(404).json({
+          success: false,
+          message: "Restaurant not found",
+        });
+      }
+
+      res.status(200).json({
+        success: true,
+        data: restaurant,
+      });
+    } catch (err: any) {
+      console.error("Error fetching restaurant by slug:", err);
+      return res.status(500).json({
+        success: false,
+        message: "Failed to fetch restaurant",
+      });
+    }
+  }
+
   static async updateRestaurant(req: Request, res: Response) {
     try {
       const { id } = req.params;

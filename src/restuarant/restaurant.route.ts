@@ -519,6 +519,8 @@ router.delete("/menu/:id", authMiddleware, RestaurantController.deleteMenuItem);
  */
 router.patch("/menu/:id/toggle", authMiddleware, RestaurantController.toggleMenuItemAvailability);
 
+router.get("/slug/:slug", RestaurantController.getRestaurantBySlug);
+
 export default router;
 
 /**

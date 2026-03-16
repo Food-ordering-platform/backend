@@ -110,66 +110,50 @@ export class PaymentController {
 
 static async webhook(req: Request, res: Response) {
   try {
-    const signature = req.headers["x-aggregator-signature"] as string;
-    const fullSecret = process.env.XOROPAY_SECRET_KEY!;
+    const signature = (req.headers["x-aggregator-signature"] || req.headers["x-xoropay-signature"]) as string;
+    const fullSecret = process.env.XOROPAY_SECRET_KEY || "";
     
-    //XOROPAY REQUIREMENT: Use the third segment of the key
-    const webhookSecret = fullSecret.split("_")[2];
+    // We break down the key to test all of XoroPay's possible hashing secrets
+    const segments = fullSecret.split("_");
+    const secretSegment2 = segments[2]; // 318ad...
+    const secretFull = fullSecret;      // aggsk_test_...
+    const secretEnd = segments.slice(2).join("_"); // 318ad..._agg-589de
 
     const rawBody = (req as any).rawBody;
 
-    console.log("=== WEBHOOK DEBUG START ===");
-    console.log("1. Full Secret:", fullSecret);
-    console.log("2. Extracted Webhook Secret:", webhookSecret);
-    console.log("3. Signature Header from XoroPay:", signature);
-    console.log("4. Has Raw Body?", !!rawBody);
-
     if (!rawBody || !signature) {
-      return res.status(400).json({ error: "Missing signature or body" });
+      return res.status(401).json({ error: "Missing signature or body" });
     }
 
-    // 🛑 XOROPAY REQUIREMENT: Parse, sort keys deeply, then stringify
-    const body = JSON.parse(rawBody.toString());
-    const message = JSON.stringify(sortKeysDeep(body));
+    // Two possible ways XoroPay might be stringifying the payload
+    const bodyObj = JSON.parse(rawBody.toString());
+    const sortedMessage = JSON.stringify(sortKeysDeep(bodyObj));
+    const rawMessage = rawBody.toString();
 
-    // 🛑 XOROPAY REQUIREMENT: Use sha256 (not sha512)
-    const expected = crypto
-      .createHmac("sha256", webhookSecret)
-      .update(message)
-      .digest("hex");
+    // Helper to generate the hashes
+    const generateHash = (secret: string, payload: string) => 
+      crypto.createHmac("sha256", secret).update(payload).digest("hex");
 
-    // Timing safe comparison to prevent brute-force attacks
-    const isVerified = crypto.timingSafeEqual(
-      Buffer.from(expected),
-      Buffer.from(signature)
-    );
+    console.log("=== HASH BRUTE FORCE START ===");
+    console.log("🎯 TARGET FROM XOROPAY:", signature);
+    console.log("--------------------------------------------------");
+    console.log("1. Sorted Payload + Seg 2 Secret:", generateHash(secretSegment2, sortedMessage));
+    console.log("2. Raw Payload    + Seg 2 Secret:", generateHash(secretSegment2, rawMessage));
+    console.log("3. Sorted Payload + Full Secret :", generateHash(secretFull, sortedMessage));
+    console.log("4. Raw Payload    + Full Secret :", generateHash(secretFull, rawMessage));
+    console.log("5. Sorted Payload + Seg 2_3 Sec :", generateHash(secretEnd, sortedMessage));
+    console.log("6. Raw Payload    + Seg 2_3 Sec :", generateHash(secretEnd, rawMessage));
+    console.log("=== HASH BRUTE FORCE END ===");
 
-    if (!isVerified) {
-      return res.status(401).json({ error: "Invalid signature" });
-    }
+    // Temporary bypass just so you can see the terminal output without crashing
+    // Remove this bypass once you find the matching hash!
+    return res.status(200).json({ status: "Debugging Hash" });
 
-    // 3. Handle the event
-    // XoroPay structure: { event: "charge.success", reference: "...", data: {...} }
-    const { event, reference } = req.body;
-
-    if (event === "charge.success") {
-      // This triggers your push notifications and confirms the order
-      await OrderService.processSuccessfulPayment(reference);
-    } else if (event === "charge.failed") {
-      await prisma.order.update({
-        where: { reference: reference },
-        data: { paymentStatus: "FAILED" },
-      });
-    }
-
-    return res.status(200).json({ status: "ok" });
   } catch (err) {
     console.error("Webhook error:", err);
-    // Always return 200 to the aggregator to prevent them from retrying failed logic
     return res.sendStatus(200);
   }
 }
-
   static async getBanks(req: Request, res: Response) {
     try {
       const banks = await PaymentService.getBankList();

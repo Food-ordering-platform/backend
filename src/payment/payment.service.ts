@@ -33,7 +33,7 @@ export class PaymentService {
         amount: amount, // No longer multiplying by 100 unless XoroPay specifically asks for Kobo
         currency: 'NGN',
         reference: reference,
-        redirect_url: `${FRONTEND_URL}/orders/details/${reference}`,
+        redirect_url: `${FRONTEND_URL}/orders/details?orderId=${reference}`,
         notification_url: `${process.env.BACKEND_URL}/api/payments/webhook`,
         metadata: { 
           platform: "ChowEazy",

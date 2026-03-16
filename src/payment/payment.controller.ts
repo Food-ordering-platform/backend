@@ -110,50 +110,61 @@ export class PaymentController {
 
 static async webhook(req: Request, res: Response) {
   try {
+    // 1. Get the signature and the secret
     const signature = (req.headers["x-aggregator-signature"] || req.headers["x-xoropay-signature"]) as string;
-    const fullSecret = process.env.XOROPAY_SECRET_KEY || "";
+    const fullSecret = process.env.XOROPAY_SECRET_KEY!;
     
-    // We break down the key to test all of XoroPay's possible hashing secrets
-    const segments = fullSecret.split("_");
-    const secretSegment2 = segments[2]; // 318ad...
-    const secretFull = fullSecret;      // aggsk_test_...
-    const secretEnd = segments.slice(2).join("_"); // 318ad..._agg-589de
-
+    // Extract the exact segment XoroPay uses (Index 2)
+    const webhookSecret = fullSecret.split("_")[2]; 
     const rawBody = (req as any).rawBody;
 
     if (!rawBody || !signature) {
-      return res.status(401).json({ error: "Missing signature or body" });
+      return res.status(400).json({ error: "Missing signature or body" });
     }
 
-    // Two possible ways XoroPay might be stringifying the payload
-    const bodyObj = JSON.parse(rawBody.toString());
-    const sortedMessage = JSON.stringify(sortKeysDeep(bodyObj));
+    // 2. Hash the RAW payload directly (The #2 Brute Force Winner)
     const rawMessage = rawBody.toString();
+    const expected = crypto
+      .createHmac("sha256", webhookSecret)
+      .update(rawMessage)
+      .digest("hex");
 
-    // Helper to generate the hashes
-    const generateHash = (secret: string, payload: string) => 
-      crypto.createHmac("sha256", secret).update(payload).digest("hex");
+    // 3. Timing-safe comparison
+    const isVerified = crypto.timingSafeEqual(
+      Buffer.from(expected),
+      Buffer.from(signature)
+    );
 
-    console.log("=== HASH BRUTE FORCE START ===");
-    console.log("🎯 TARGET FROM XOROPAY:", signature);
-    console.log("--------------------------------------------------");
-    console.log("1. Sorted Payload + Seg 2 Secret:", generateHash(secretSegment2, sortedMessage));
-    console.log("2. Raw Payload    + Seg 2 Secret:", generateHash(secretSegment2, rawMessage));
-    console.log("3. Sorted Payload + Full Secret :", generateHash(secretFull, sortedMessage));
-    console.log("4. Raw Payload    + Full Secret :", generateHash(secretFull, rawMessage));
-    console.log("5. Sorted Payload + Seg 2_3 Sec :", generateHash(secretEnd, sortedMessage));
-    console.log("6. Raw Payload    + Seg 2_3 Sec :", generateHash(secretEnd, rawMessage));
-    console.log("=== HASH BRUTE FORCE END ===");
+    if (!isVerified) {
+      console.error("❌ Unauthorized Webhook Attempt");
+      return res.status(401).json({ error: "Invalid signature" });
+    }
 
-    // Temporary bypass just so you can see the terminal output without crashing
-    // Remove this bypass once you find the matching hash!
-    return res.status(200).json({ status: "Debugging Hash" });
+    // 4. Process the verified event safely
+    const eventBody = JSON.parse(rawMessage);
+    const { event, reference } = eventBody;
+
+    if (event === "charge.success") {
+      console.log(`✅ Payment Confirmed for Order: ${reference}`);
+      // Triggers the push notifications and flips order to PAID
+      await OrderService.processSuccessfulPayment(reference);
+    } else if (event === "charge.failed") {
+      await prisma.order.update({
+        where: { reference: reference },
+        data: { paymentStatus: "FAILED" },
+      });
+    }
+
+    // Always return 200 OK so XoroPay knows we received it
+    return res.status(200).json({ status: "ok" });
 
   } catch (err) {
-    console.error("Webhook error:", err);
+    console.error("Webhook processing error:", err);
+    // Return 200 even on internal errors to prevent infinite aggregator retries
     return res.sendStatus(200);
   }
 }
+
   static async getBanks(req: Request, res: Response) {
     try {
       const banks = await PaymentService.getBankList();

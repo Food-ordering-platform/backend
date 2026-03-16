@@ -88,7 +88,7 @@ export class RestaurantService {
     const restaurants = await prisma.restaurant.findMany({
       select: {
         id: true, name: true, address: true, phone: true,
-        imageUrl: true, prepTime: true, minimumOrder: true, isOpen: true,
+        imageUrl: true, prepTime: true, minimumOrder: true, isOpen: true, slug: true
       },
     });
 

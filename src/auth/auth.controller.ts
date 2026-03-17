@@ -50,6 +50,7 @@ export class AuthController {
       return res.status(200).json({
         message: "Login successful",
         token: result.accessToken, // Using accessToken from the service
+        refreshToken: result.refreshToken,
         user: result.user,
         requireOtp: result.requireOtp,
       });
@@ -82,6 +83,7 @@ export class AuthController {
         message: "Google login successful",
         token: result.accessToken, // Using accessToken from the service
         user: result.user,
+        refreshToken: result.refreshToken,
       });
     } catch (err: any) {
       // 404 for "User not found" prompts the frontend to redirect to signup

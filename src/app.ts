@@ -10,7 +10,6 @@ import * as Sentry from "@sentry/node"; // Sentry import
 import { nodeProfilingIntegration } from "@sentry/profiling-node";
 import cookieParser from 'cookie-parser';// import { globalLimiter } from "./config/rate-limit";
 
-
 import authRouter from "./auth/auth.route";
 import restaurantRouter from "./restuarant/restaurant.route";
 import orderRouter from "./order/order.route";
@@ -69,7 +68,6 @@ app.use(express.json({
 }));
 app.use(express.urlencoded({ extended: true }));
 
-app.use(express.json()); // 🟢 2. Ensure this is here for req.body
 app.use(cookieParser());
 
 // app.use("/api", globalLimiter);

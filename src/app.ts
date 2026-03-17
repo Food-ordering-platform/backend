@@ -8,7 +8,7 @@ import compression from "compression"
 import { setupSwagger } from './swagger';
 import * as Sentry from "@sentry/node"; // Sentry import
 import { nodeProfilingIntegration } from "@sentry/profiling-node";
-import { globalLimiter } from "./config/rate-limit";
+// import { globalLimiter } from "./config/rate-limit";
 
 import authRouter from "./auth/auth.route";
 import restaurantRouter from "./restuarant/restaurant.route";
@@ -68,7 +68,7 @@ app.use(express.json({
 }));
 app.use(express.urlencoded({ extended: true }));
 
-app.use("/api", globalLimiter);
+// app.use("/api", globalLimiter);
 
 // 5. Routes
 app.use("/api/auth", authRouter);

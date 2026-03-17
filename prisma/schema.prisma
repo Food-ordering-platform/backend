@@ -12,39 +12,45 @@ datasource db {
 // ================= USER & AUTH =================
 
 model User {
-  id          String       @id @default(uuid())
-  name        String
-  email       String       @unique
-  password    String?       //Made it optional to alloow google auth users
-  phone       String?       //Made it optional to alloow google auth users
-  address     String?      
-  role        Role         @default(CUSTOMER)
+  id              String       @id @default(uuid())
+  name            String
+  email           String       @unique
+  password        String?      // Made it optional to allow google auth users
+  phone           String?      // Made it optional to allow google auth users
+  address         String?      
+  role            Role         @default(CUSTOMER)
   
-  restaurant  Restaurant?  @relation("RestaurantOwner") 
-  orders      Order[]      @relation("CustomerOrders")
-  otp         Otp[]
+  restaurant      Restaurant?  @relation("RestaurantOwner") 
+  orders          Order[]      @relation("CustomerOrders")
+  otp             Otp[]
 
-  googleId    String?      @unique // [Add] To link Google accounts reliably
-  avatar      String?      //Good for professional profile feel
-  pushToken   String?
+  googleId        String?      @unique // To link Google accounts reliably
+  avatar          String?      // Good for professional profile feel
+  pushToken       String?
 
-  latitude    Float?
-  longitude   Float?
+  latitude        Float?
+  longitude       Float?
 
-  // [NEW] The orders this user (Rider) has delivered
-  deliveries   Order[]  @relation("RiderOrders")
+  // The orders this user (Rider) has delivered
+  deliveries      Order[]  @relation("RiderOrders")
 
   transactions Transaction[]
 
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
-  isVerified  Boolean      @default(false)
-  isEmailVerified  Boolean   @default(false)
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+  isVerified      Boolean      @default(false)
+  isEmailVerified Boolean      @default(false)
 
   termsAcceptedAt DateTime?
 
+  isOnline        Boolean      @default(false)
 
-  isOnline    Boolean    @default(false)
+  // 🟢 NEW INDEXES
+  // Frequently used to find online riders or filter users by role
+  @@index([role])
+  @@index([isOnline])
+  // Often used for login/verification lookups if phone auth is added later
+  @@index([phone]) 
 }
 
 model Otp {
@@ -55,6 +61,11 @@ model Otp {
   createdAt DateTime @default(now())
   expiresAt DateTime
   used      Boolean  @default(false)
+
+  // 🟢 NEW INDEXES
+  // Crucial for fast OTP validation queries where we check code + userId + used + expiresAt
+  @@index([userId, code])
+  @@index([expiresAt])
 }
 
 
@@ -67,7 +78,7 @@ model Restaurant {
   address      String
   phone        String
   imageUrl     String?   
-  slug         String?      @unique 
+  slug         String?       @unique 
   
   owner        User          @relation("RestaurantOwner", fields: [ownerId], references: [id])
   ownerId      String        @unique 
@@ -80,7 +91,6 @@ model Restaurant {
   isOpen       Boolean       @default(false)
   
   // Vendor sets only Prep Time.
-  // Delivery Fee is removed because it's now calculated based on distance.
   prepTime     Int           @default(20) 
   minimumOrder Float         @default(0.0) // Can keep this if vendors want to enforce minimums
 
@@ -90,10 +100,14 @@ model Restaurant {
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
 
-  // 🟢 ADD THIS RELATION
-
   rating       Float     @default(0.0) // Average rating
   ratingCount  Int       @default(0)
+
+  // 🟢 NEW INDEXES
+  // Frequently queried to show open restaurants on the customer app
+  @@index([isOpen])
+  // Useful if you implement a "Top Rated" sorting feature
+  @@index([rating])
 }
 
 model MenuCategory {
@@ -105,6 +119,10 @@ model MenuCategory {
   
   createdAt    DateTime    @default(now())
   updatedAt    DateTime    @updatedAt
+
+  // 🟢 NEW INDEXES
+  // Speeds up loading a specific restaurant's categories
+  @@index([restaurantId])
 }
 
 model MenuItem {
@@ -125,75 +143,88 @@ model MenuItem {
   updatedAt    DateTime     @updatedAt
   deletedAt    DateTime?    
 
+  // 🟢 NEW INDEXES
   @@index([restaurantId])
+  // Frequently used to load items within a specific category tab
+  @@index([categoryId])
+  // Useful for hiding soft-deleted or unavailable items from the customer menu quickly
+  @@index([available, deletedAt]) 
 }
 
 // ================= ORDERING & LOGISTICS =================
 
 model Order {
-  id              String        @id @default(uuid())
+  id                  String        @id @default(uuid())
   
-  customer        User          @relation("CustomerOrders", fields: [customerId], references: [id])
-  customerId      String
+  customer            User          @relation("CustomerOrders", fields: [customerId], references: [id])
+  customerId          String
   
-  restaurant      Restaurant    @relation(fields: [restaurantId], references: [id])
-  restaurantId    String
+  restaurant          Restaurant    @relation(fields: [restaurantId], references: [id])
+  restaurantId        String
 
-  items           OrderItem[]
+  items               OrderItem[]
 
   // --- Financial Snapshot ---
-  totalAmount     Float         
-  deliveryFee     Float         // Still kept here to snapshot what YOU charged the user
+  totalAmount         Float         
+  deliveryFee         Float         
   
-  status          OrderStatus   @default(PENDING)
-  paymentStatus   PaymentStatus @default(PENDING)
+  status              OrderStatus   @default(PENDING)
+  paymentStatus       PaymentStatus @default(PENDING)
   
-  deliveryAddress String
-  deliveryNotes   String? 
+  deliveryAddress     String
+  deliveryNotes       String? 
   deliveryPhoneNumber String      
 
   deliveryLatitude  Float?
   deliveryLongitude Float?
 
-  idempotencyKey  String?       @unique
-  checkoutUrl     String?       // Store payment link to return on retry
+  idempotencyKey      String?       @unique
+  checkoutUrl         String?       
 
-  reference       String        @unique 
-  token           String?       @unique 
+  reference           String        @unique 
+  token               String?       @unique 
 
-  // [NEW] Who is delivering this?
-  riderId      String?
-  rider        User?    @relation("RiderOrders", fields: [riderId], references: [id])
+  // Who is delivering this?
+  riderId            String?
+  rider              User?    @relation("RiderOrders", fields: [riderId], references: [id])
 
-  riderName     String?
-  riderPhone    String?
+  riderName          String?
+  riderPhone         String?
 
   // === NEW FIELDS FOR LOGISTICS ===
-  deliveryCode      String?  // The OTP the customer gives the rider (e.g. "4590")
+  deliveryCode       String?  // The OTP the customer gives the rider
   
-
   transactions Transaction[]
 
-  createdAt       DateTime      @default(now())
-  updatedAt       DateTime      @updatedAt
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
 
+  // 🟢 EXISTING & NEW INDEXES
   @@index([restaurantId])
   @@index([customerId])
   @@index([status])
   @@index([paymentStatus])
+  // Frequently queried by riders to see their assigned active/past orders
+  @@index([riderId])
+  // Very common to sort orders by date (e.g., "Latest Orders" dashboard)
+  @@index([createdAt])
 }
 
 model OrderItem {
-  id        String   @id @default(uuid())
+  id           String   @id @default(uuid())
   
-  order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  orderId   String
+  order        Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  orderId      String
 
   menuItemName String  
   menuItemId   String? 
   
-  quantity  Int
-  price     Float    
+  quantity     Int
+  price        Float    
+
+  // 🟢 NEW INDEXES
+  // Essential for loading the items belonging to a specific order quickly
+  @@index([orderId])
 }
 
 // ================= ENUMS =================
@@ -224,29 +255,39 @@ enum Role {
 
 model Transaction {
   id          String              @id @default(uuid())
-  userId      String              // The User (Vendor, Rider, or Admin) receiving/losing money
+  userId      String              
   user        User                @relation(fields: [userId], references: [id])
   
-  amount      Float               // Positive (+) for Earnings, Negative (-) for Withdrawals
+  amount      Float               
   
-  type        TransactionType     // CREDIT or DEBIT
-  category    TransactionCategory // ORDER_EARNING, WITHDRAWAL, REFUND, PLATFORM_FEE
+  type        TransactionType     
+  category    TransactionCategory 
   status      TransactionStatus   @default(PENDING)
   
-  orderId     String?             // Link to the Order (if applicable)
+  orderId     String?             
   order       Order?              @relation(fields: [orderId], references: [id])
   
-  description String?             // e.g. "Earnings from Order #1234"
+  description String?             
 
   reference   String?             @unique
   
   createdAt   DateTime            @default(now())
   updatedAt   DateTime            @updatedAt
+
+  // 🟢 NEW INDEXES
+  // For calculating a user's wallet balance or showing their transaction history
+  @@index([userId])
+  // To quickly find transactions related to a specific order (e.g., for refunds)
+  @@index([orderId])
+  // Frequently used to filter pending withdrawals or successful payouts
+  @@index([status, type])
+  // Often sorted by date in transaction logs
+  @@index([createdAt])
 }
 
 enum TransactionType {
-  CREDIT  // Money coming in
-  DEBIT   // Money going out
+  CREDIT  
+  DEBIT   
 }
 
 enum TransactionCategory {

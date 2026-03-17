@@ -369,7 +369,7 @@ export class AuthService {
     const accessToken = jwt.sign(
       { userId: user.id, role: user.role },
       process.env.JWT_SECRET as string,
-      { expiresIn: "30s" } // Short-lived Access Token
+      { expiresIn: "15m" } // Short-lived Access Token
     );
 
     const refreshToken = jwt.sign(

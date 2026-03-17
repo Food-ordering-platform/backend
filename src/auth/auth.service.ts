@@ -369,7 +369,7 @@ export class AuthService {
     const accessToken = jwt.sign(
       { userId: user.id, role: user.role },
       process.env.JWT_SECRET as string,
-      { expiresIn: "10s" } // Short-lived Access Token
+      { expiresIn: "1m" } // Short-lived Access Token
     );
 
     const refreshToken = jwt.sign(
@@ -381,7 +381,7 @@ export class AuthService {
     return { accessToken, refreshToken };
   }
 
-  
+
   // ------------------ REFRESH TOKEN ------------------
   static async refreshAccessToken(refreshToken: string) {
     try {

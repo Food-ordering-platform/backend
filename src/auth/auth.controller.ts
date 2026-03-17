@@ -222,20 +222,28 @@ export class AuthController {
   // ------------------ REFRESH ENDPOINT ------------------
   static async refreshToken(req: Request, res: Response) {
     try {
-      // 🟢 The Magic: It checks cookies for the Web App, and req.body for your Mobile Apps!
+      // 1. Extract the token
       const refreshToken = req.cookies.refreshToken || req.body.refreshToken;
+      
+      // Log the presence (not the value) of the token for debugging
+      console.log(`[Refresh] Token received from ${req.cookies.refreshToken ? 'cookie' : 'body'}:`, !!refreshToken);
 
       if (!refreshToken) {
+        console.warn("[Refresh] Rejecting: No refresh token provided.");
         return res.status(401).json({ error: "Refresh token missing" });
       }
 
-      // Call the service to do the math
+      // 2. Attempt the refresh
       const accessToken = await AuthService.refreshAccessToken(refreshToken);
 
+      console.log("[Refresh] ✅ Success: New access token generated.");
       return res.status(200).json({ accessToken });
       
     } catch (error: any) {
-      // If the refresh token is dead, clear the dead cookie from their browser
+      // 🟢 THE CRITICAL LOG: This reveals the "Why" behind the 403
+      console.error("[Refresh] ❌ Failed:", error.message);
+
+      // Clear the cookie if it was a browser-based request
       res.clearCookie("refreshToken", {
         httpOnly: true,
         secure: process.env.NODE_ENV === "production",
@@ -247,6 +255,5 @@ export class AuthController {
       });
     }
   }
-
   
 }

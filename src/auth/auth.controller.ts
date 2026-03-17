@@ -223,7 +223,7 @@ export class AuthController {
   static async refreshToken(req: Request, res: Response) {
     try {
       // 1. Extract the token
-      const refreshToken = req.cookies.refreshToken || req.body.refreshToken;
+      const refreshToken = req.cookies?.refreshToken || req.body?.refreshToken;
       
       // Log the presence (not the value) of the token for debugging
       console.log(`[Refresh] Token received from ${req.cookies.refreshToken ? 'cookie' : 'body'}:`, !!refreshToken);

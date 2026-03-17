@@ -79,10 +79,15 @@ export class AuthService {
 
   // ------------------ LOGIN ------------------
   static async login(email: string, password: string) {
-    const user = await prisma.user.findUnique({ where: { email }, include: { restaurant: true } });
+    const user = await prisma.user.findUnique({ 
+      where: { email }, 
+      include: { restaurant: true } 
+    });
+    
     if (!user) throw new Error("We couldn't find an account with that email.");
 
     if (!user.password) throw new Error("Invalid credentials. Did you sign up with Google?");
+    
     const isValid = await bcrypt.compare(password, user.password);
     if (!isValid) throw new Error("Incorrect password. Please try again.");
 
@@ -90,6 +95,7 @@ export class AuthService {
       const code = await this.generateOtp(user.id);
       await sendOtPEmail(user.email, code);
 
+      // Temp token just for the OTP verification screen
       const tempToken = jwt.sign(
         { userId: user.id, role: user.role },
         process.env.JWT_SECRET as string,
@@ -98,27 +104,29 @@ export class AuthService {
 
       return {
         requireOtp: true,
-        token: tempToken,
+        accessToken: tempToken, // Renamed to accessToken for frontend consistency
         user
       };
     }
 
-    const token = jwt.sign(
-      { userId: user.id, role: user.role },
-      process.env.JWT_SECRET as string,
-      { expiresIn: "7d" }
-    );
+    // 🟢 THE FIX: Generate the Two-Token System
+    const { accessToken, refreshToken } = this.generateTokens(user);
 
-    sendLoginAlertEmail(user.email, user.name)
-    return { token, user };
+    sendLoginAlertEmail(user.email, user.name);
+    
+    // Return both tokens to the controller
+    return { accessToken, refreshToken, user };
   }
 
+
+
   // ------------------ GOOGLE LOGIN ------------------
-  static async loginWithGoogle(token: string, termsAccepted: boolean) {
+ static async loginWithGoogle(token: string, termsAccepted: boolean) {
     const ticket = await googleClient.verifyIdToken({
       idToken: token,
       audience: process.env.GOOGLE_CLIENT_ID,
     });
+    
     const payload = ticket.getPayload();
 
     if (!payload || !payload.email) {
@@ -131,13 +139,13 @@ export class AuthService {
       where: { email },
     });
 
-    //  If user doesn't exist AND they didn't accept terms (via Signup page)
+    // If user doesn't exist AND they didn't accept terms (via Signup page)
     if (!user && !termsAccepted) {
       throw new Error("Account not found. Please use the Sign Up page to create an account.");
     }
 
     if (!user) {
-      // ✅ CREATE NEW USER (With Terms Date)
+      // CREATE NEW USER 
       user = await prisma.user.create({
         data: {
           email,
@@ -146,7 +154,7 @@ export class AuthService {
           avatar: picture,
           isEmailVerified: true,
           role: "CUSTOMER",
-          termsAcceptedAt: new Date(), // <--- SAVING THE DATE
+          termsAcceptedAt: new Date(), 
         },
       });
     } else {
@@ -159,18 +167,20 @@ export class AuthService {
       }
     }
 
-    const jwtToken = jwt.sign(
-      { userId: user.id, role: user.role },
-      process.env.JWT_SECRET as string,
-      { expiresIn: "7d" }
-    );
+    // 🟢 THE FIX: Generate the Two-Token System
+    const { accessToken, refreshToken } = this.generateTokens(user);
 
     if (user.email) {
-      sendLoginAlertEmail(user.email, user.name)
+      sendLoginAlertEmail(user.email, user.name);
     }
 
-    return { token: jwtToken, user };
+    // Return both tokens to the controller
+    return { accessToken, refreshToken, user };
   }
+
+
+  
+
 
   static async getMe(userId: string) {
     const user = await prisma.user.findUnique({
@@ -353,5 +363,47 @@ export class AuthService {
     });
 
     return code;
+  }
+
+  static generateTokens(user: { id: string; role: string }) {
+    const accessToken = jwt.sign(
+      { userId: user.id, role: user.role },
+      process.env.JWT_SECRET as string,
+      { expiresIn: "30s" } // Short-lived Access Token
+    );
+
+    const refreshToken = jwt.sign(
+      { userId: user.id },
+      process.env.JWT_REFRESH_SECRET as string, // Make sure you add this to .env!
+      { expiresIn: "30d" } // Long-lived Refresh Token
+    );
+
+    return { accessToken, refreshToken };
+  }
+
+  // ------------------ REFRESH TOKEN ------------------
+  static async refreshAccessToken(refreshToken: string) {
+    try {
+      // 1. Verify the token signature
+      const decoded = jwt.verify(
+        refreshToken, 
+        process.env.JWT_REFRESH_SECRET as string
+      ) as { userId: string };
+
+      // 2. Ensure the user still exists (and hasn't been deleted)
+      const user = await prisma.user.findUnique({ 
+        where: { id: decoded.userId } 
+      });
+      
+      if (!user) throw new Error("User not found");
+
+      // 3. Generate a brand new 15-minute Access Token
+        const { accessToken } = this.generateTokens({ id: user.id, role: user.role });
+
+      return accessToken;
+    } catch (error) {
+      // If the token is expired or tampered with, it throws here
+      throw new Error("Invalid or expired refresh token.");
+    }
   }
 }

@@ -524,6 +524,13 @@ router.post("/reset-password", authLimiter, AuthController.resetPassword);
  */
 router.post("/push-token", authMiddleware, AuthController.updatePushToken);
 
+
+// Inside your auth router setup
+router.post("/refresh", AuthController.refreshToken);
+
+// Add this with your other auth routes
+router.post("/logout", AuthController.logout);
+
 export default router;
 
 /**

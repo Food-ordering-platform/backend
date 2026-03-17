@@ -31,14 +31,25 @@ export class AuthController {
   }
 
   // ------------------ LOGIN ------------------
+  // ------------------ LOGIN ------------------
   static async login(req: Request, res: Response) {
     try {
       const data = loginSchema.parse(req.body);
       const result = await AuthService.login(data.email, data.password);
 
+      // 🟢 The Fix: Set the Refresh Token in an HttpOnly Cookie
+      if (result.refreshToken) {
+        res.cookie("refreshToken", result.refreshToken, {
+          httpOnly: true,
+          secure: process.env.NODE_ENV === "production", // Only send over HTTPS in production
+          sameSite: process.env.NODE_ENV === "production" ? "none" : "lax", // 'none' is crucial for cross-domain staging
+          maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days in milliseconds
+        });
+      }
+
       return res.status(200).json({
         message: "Login successful",
-        token: result.token,
+        token: result.accessToken, // Using accessToken from the service
         user: result.user,
         requireOtp: result.requireOtp,
       });
@@ -57,9 +68,19 @@ export class AuthController {
 
       const result = await AuthService.loginWithGoogle(token, !!termsAccepted);
 
+      // 🟢 The Fix: Set the Refresh Token in an HttpOnly Cookie
+      if (result.refreshToken) {
+        res.cookie("refreshToken", result.refreshToken, {
+          httpOnly: true,
+          secure: process.env.NODE_ENV === "production",
+          sameSite: process.env.NODE_ENV === "production" ? "none" : "lax", 
+          maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days in milliseconds
+        });
+      }
+
       return res.status(200).json({
         message: "Google login successful",
-        token: result.token,
+        token: result.accessToken, // Using accessToken from the service
         user: result.user,
       });
     } catch (err: any) {
@@ -69,6 +90,7 @@ export class AuthController {
     }
   }
 
+  
   // ------------------ GET ME ------------------
   static async getMe(req: Request, res: Response) {
     try {
@@ -132,8 +154,20 @@ export class AuthController {
   }
 
   // ------------------ LOGOUT ------------------
+  // ------------------ LOGOUT ------------------
   static async logout(req: Request, res: Response) {
-    return res.status(200).json({ message: "Logged out successfully" });
+    try {
+      // Clear the HttpOnly cookie for the Next.js Web App
+      res.clearCookie("refreshToken", {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+      });
+
+      return res.status(200).json({ message: "Logout successful" });
+    } catch (error: any) {
+      return res.status(500).json({ error: "Failed to log out" });
+    }
   }
 
   // ... (Password reset & Push token methods)
@@ -183,5 +217,34 @@ export class AuthController {
     }
   }
 
+  // ------------------ REFRESH ENDPOINT ------------------
+  static async refreshToken(req: Request, res: Response) {
+    try {
+      // 🟢 The Magic: It checks cookies for the Web App, and req.body for your Mobile Apps!
+      const refreshToken = req.cookies.refreshToken || req.body.refreshToken;
 
+      if (!refreshToken) {
+        return res.status(401).json({ error: "Refresh token missing" });
+      }
+
+      // Call the service to do the math
+      const accessToken = await AuthService.refreshAccessToken(refreshToken);
+
+      return res.status(200).json({ accessToken });
+      
+    } catch (error: any) {
+      // If the refresh token is dead, clear the dead cookie from their browser
+      res.clearCookie("refreshToken", {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+      });
+      
+      return res.status(403).json({ 
+        error: error.message || "Session expired. Please log in again." 
+      });
+    }
+  }
+
+  
 }

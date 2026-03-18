@@ -1,8 +1,9 @@
 import { Router } from "express";
 import { RiderController } from "./rider.controller";
-import { authMiddleware } from "../auth/auth.middleware";
+import { authMiddleware, roleMiddleware } from "../auth/auth.middleware";
 
 const router = Router();
+const riderAuth = [authMiddleware, roleMiddleware(["RIDER"])];
 
 /**
  * @swagger
@@ -56,7 +57,7 @@ router.use(authMiddleware);
  *             schema:
  *               $ref: '#/components/schemas/Error'
  */
-router.get("/orders/available", authMiddleware, RiderController.getAvailableOrders);
+router.get("/orders/available", riderAuth, RiderController.getAvailableOrders);
 
 /**
  * @swagger
@@ -95,7 +96,7 @@ router.get("/orders/available", authMiddleware, RiderController.getAvailableOrde
  *             schema:
  *               $ref: '#/components/schemas/Error'
  */
-router.get("/orders/active", authMiddleware, RiderController.getActiveOrder);
+router.get("/orders/active", riderAuth, RiderController.getActiveOrder);
 
 /**
  * @swagger
@@ -148,7 +149,7 @@ router.get("/orders/active", authMiddleware, RiderController.getActiveOrder);
  *             schema:
  *               $ref: '#/components/schemas/Error'
  */
-router.patch("/orders/:id/accept", authMiddleware, RiderController.acceptOrder);
+router.patch("/orders/:id/accept", riderAuth, RiderController.acceptOrder);
 
 
 
@@ -200,7 +201,7 @@ router.patch("/orders/:id/accept", authMiddleware, RiderController.acceptOrder);
  *             schema:
  *               $ref: '#/components/schemas/Error'
  */
-router.patch("/orders/:id/pickup", authMiddleware, RiderController.confirmPickup);
+router.patch("/orders/:id/pickup", riderAuth, RiderController.confirmPickup);
 
 /**
  * @swagger
@@ -266,7 +267,7 @@ router.patch("/orders/:id/pickup", authMiddleware, RiderController.confirmPickup
  *             schema:
  *               $ref: '#/components/schemas/Error'
  */
-router.patch("/orders/:id/deliver", authMiddleware, RiderController.confirmDelivery);
+router.patch("/orders/:id/deliver", riderAuth, RiderController.confirmDelivery);
 
 // ─────────────────────────────────────────────
 // EARNINGS & HISTORY
@@ -331,7 +332,7 @@ router.patch("/orders/:id/deliver", authMiddleware, RiderController.confirmDeliv
  *             schema:
  *               $ref: '#/components/schemas/Error'
  */
-router.get("/earnings", authMiddleware, RiderController.getEarnings);
+router.get("/earnings", riderAuth, RiderController.getEarnings);
 
 /**
  * @swagger
@@ -369,16 +370,16 @@ router.get("/earnings", authMiddleware, RiderController.getEarnings);
  *             schema:
  *               $ref: '#/components/schemas/Error'
  */
-router.get("/history", authMiddleware, RiderController.getHistory);
+router.get("/history", riderAuth, RiderController.getHistory);
 
 // ─────────────────────────────────────────────
 // PAYOUT & STATUS
 // ─────────────────────────────────────────────
 
-router.post("/payout", authMiddleware, RiderController.requestPayout)
+router.post("/payout", riderAuth, RiderController.requestPayout)
 
-router.get("/transactions", authMiddleware, RiderController.getTransactions)
+router.get("/transactions", riderAuth, RiderController.getTransactions)
 
-router.patch('/status', authMiddleware, RiderController.updateStatus)
+router.patch('/status', riderAuth, RiderController.updateStatus)
 
 export default router;

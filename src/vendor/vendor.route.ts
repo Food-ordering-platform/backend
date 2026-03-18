@@ -1,9 +1,9 @@
 import { Router } from "express";
-import { authMiddleware } from "../auth/auth.middleware";
+import { authMiddleware, roleMiddleware } from "../auth/auth.middleware";
 import { VendorController } from "./vendor.controller";
 
 const router = Router();
-
+const vendorAuth = [authMiddleware, roleMiddleware(["VENDOR"])];
 /**
  * @swagger
  * tags:
@@ -66,7 +66,7 @@ const router = Router();
  *             schema:
  *               $ref: '#/components/schemas/Error'
  */
-router.get("/:restaurantId/orders", authMiddleware, VendorController.getVendorOrders);
+router.get("/:restaurantId/orders", vendorAuth, VendorController.getVendorOrders);
 
 /**
  * @swagger
@@ -120,7 +120,7 @@ router.get("/:restaurantId/orders", authMiddleware, VendorController.getVendorOr
  *             schema:
  *               $ref: '#/components/schemas/Error'
  */
-router.patch("/order/:id/accept", authMiddleware, VendorController.acceptOrder);
+router.patch("/order/:id/accept", vendorAuth, VendorController.acceptOrder);
 
 /**
  * @swagger
@@ -174,7 +174,7 @@ router.patch("/order/:id/accept", authMiddleware, VendorController.acceptOrder);
  *             schema:
  *               $ref: '#/components/schemas/Error'
  */
-router.patch("/order/:id/request-rider", authMiddleware, VendorController.requestRider);
+router.patch("/order/:id/request-rider", vendorAuth, VendorController.requestRider);
 
 /**
  * @swagger
@@ -227,7 +227,7 @@ router.patch("/order/:id/request-rider", authMiddleware, VendorController.reques
  *             schema:
  *               $ref: '#/components/schemas/Error'
  */
-router.patch("/order/:id/cancel", authMiddleware, VendorController.cancelOrder);
+router.patch("/order/:id/cancel", vendorAuth, VendorController.cancelOrder);
 
 // ─────────────────────────────────────────────
 // EARNINGS & TRANSACTIONS
@@ -290,7 +290,7 @@ router.patch("/order/:id/cancel", authMiddleware, VendorController.cancelOrder);
  *             schema:
  *               $ref: '#/components/schemas/Error'
  */
-router.get("/earnings", authMiddleware, VendorController.getEarnings);
+router.get("/earnings", vendorAuth, VendorController.getEarnings);
 
 /**
  * @swagger
@@ -329,10 +329,10 @@ router.get("/earnings", authMiddleware, VendorController.getEarnings);
  *             schema:
  *               $ref: '#/components/schemas/Error'
  */
-router.get("/transactions", authMiddleware, VendorController.getTransactions);
+router.get("/transactions", vendorAuth, VendorController.getTransactions);
 
 
-router.post("/payout", authMiddleware, VendorController.requestPayout);
+router.post("/payout", vendorAuth, VendorController.requestPayout);
 
 
 

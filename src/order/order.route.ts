@@ -1,9 +1,9 @@
 import { Router } from "express";
 import { OrderController } from "./order.controller";
-import { authMiddleware } from "../auth/auth.middleware";
+import { authMiddleware, roleMiddleware } from "../auth/auth.middleware";
 
 const router = Router();
-
+const customerAuth = [authMiddleware, roleMiddleware(["CUSTOMER"])];
 /**
  * @swagger
  * tags:
@@ -143,7 +143,7 @@ const router = Router();
  *             schema:
  *               $ref: '#/components/schemas/Error'
  */
-router.post("/", authMiddleware, OrderController.createOrder);
+router.post("/", customerAuth, OrderController.createOrder);
 
 /**
  * @swagger
@@ -233,7 +233,7 @@ router.post("/", authMiddleware, OrderController.createOrder);
  *             schema:
  *               $ref: '#/components/schemas/Error'
  */
-router.post("/quote", authMiddleware, OrderController.getQuote);
+router.post("/quote", customerAuth, OrderController.getQuote);
 
 /**
  * @swagger
@@ -285,7 +285,7 @@ router.post("/quote", authMiddleware, OrderController.getQuote);
  *             schema:
  *               $ref: '#/components/schemas/Error'
  */
-router.get("/customer/:customerId", authMiddleware, OrderController.getAllOrders);
+router.get("/customer/:customerId", customerAuth, OrderController.getAllOrders);
 
 /**
  * @swagger
@@ -335,7 +335,7 @@ router.get("/customer/:customerId", authMiddleware, OrderController.getAllOrders
  *             schema:
  *               $ref: '#/components/schemas/Error'
  */
-router.get("/single/:reference", authMiddleware, OrderController.getSingleOrder);
+router.get("/single/:reference", customerAuth, OrderController.getSingleOrder);
 
 
 export default router;

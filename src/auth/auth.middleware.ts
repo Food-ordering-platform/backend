@@ -52,3 +52,26 @@ export const authMiddleware = async (req: Request, res: Response, next: NextFunc
     return res.status(401).json({ success: false, message: "Invalid or expired token." });
   }
 };
+
+export const roleMiddleware = (allowedRoles: string[]) => {
+  return (req: Request, res: Response, next: NextFunction) => {
+    // 1. Ensure the user object exists (meaning authMiddleware ran successfully)
+    if (!req.user) {
+      return res.status(401).json({ 
+        success: false, 
+        message: "Unauthorized. Please login first." 
+      });
+    }
+
+    // 2. Check if the user's role is in the list of allowed roles
+    if (!allowedRoles.includes(req.user.role)) {
+      return res.status(403).json({ 
+        success: false, 
+        message: `Access denied. Requires one of: ${allowedRoles.join(", ")}` 
+      });
+    }
+
+    // 3. User is authorized, proceed to the controller
+    next();
+  };
+}

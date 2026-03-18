@@ -156,7 +156,7 @@ export class OrderService {
       const originalItem = itemsMap.get(i.menuItemId);
       if (!originalItem) throw new Error(`Menu item not found`);
 
-      // 🟢 EDGE CASE FIX: Check if the specific item is still available!
+      //  EDGE CASE FIX: Check if the specific item is still available!
       if (!originalItem.available) {
          throw new Error(`Checkout failed: ${originalItem.name} is no longer available.`);
       }

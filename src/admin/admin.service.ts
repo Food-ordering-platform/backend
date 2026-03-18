@@ -1,75 +1,110 @@
-import { PrismaClient, TransactionStatus, Role } from "@prisma/client";
+import { PrismaClient, TransactionStatus, TransactionCategory, OrderStatus, Role } from "@prisma/client";
+
 const prisma = new PrismaClient();
 
 export class AdminService {
-  static async getPendingWithdrawals() {
-    return prisma.transaction.findMany({
-      where: {
-        category: "WITHDRAWAL",
-        status: "PENDING"
-      },
-      include: {
-        user: { select: { name: true, email: true, phone: true } }
-      },
-      orderBy: { createdAt: "desc" }
+  // ==========================================
+  // 1. ANALYTICS DASHBOARD
+  // ==========================================
+  static async getDashboardAnalytics() {
+    // 1. Get User Counts
+    const [customers, vendors, riders] = await Promise.all([
+      prisma.user.count({ where: { role: Role.CUSTOMER } }),
+      prisma.user.count({ where: { role: Role.VENDOR } }),
+      prisma.user.count({ where: { role: Role.RIDER } }),
+    ]);
+
+    // 2. Get Order Stats
+    const totalOrders = await prisma.order.count();
+    const deliveredOrders = await prisma.order.count({ 
+      where: { status: OrderStatus.DELIVERED } 
     });
+    const failedOrders = await prisma.order.count({ 
+      where: { status: OrderStatus.CANCELLED } 
+    });
+
+    // 3. Get Financial Stats (from successful transactions)
+    // Revenue: Total sum of all orders
+    const revenueAggr = await prisma.order.aggregate({
+      _sum: { totalAmount: true },
+      where: { paymentStatus: "PAID" }
+    });
+
+    // Profit: Sum of all platform fees collected
+    const profitAggr = await prisma.transaction.aggregate({
+      _sum: { amount: true },
+      where: { 
+        status: TransactionStatus.SUCCESS, 
+        category: TransactionCategory.PLATFORM_FEE 
+      }
+    });
+
+    return {
+      revenue: revenueAggr._sum.totalAmount || 0,
+      profit: profitAggr._sum.amount || 0,
+      totalOrders,
+      deliveredOrders,
+      failedOrders,
+      customers,
+      vendors,
+      riders,
+    };
   }
 
-  static async processWithdrawal(transactionId: string, action: "APPROVE" | "REJECT") {
-    const transaction = await prisma.transaction.findUnique({ where: { id: transactionId } });
-    if (!transaction) throw new Error("Transaction not found");
-
-    if (transaction.status !== "PENDING") throw new Error("Transaction already processed");
-
-    const newStatus: TransactionStatus = action === "APPROVE" ? "SUCCESS" : "FAILED";
-
-    // If REJECTED, the money effectively "returns" to their balance because 
-    // getEarnings() calculates (Credits - Debits). 
-    // However, for strict accounting, we usually create a "REFUND" credit or just mark this debit as FAILED.
-    // In your logic, marking it FAILED removes it from the "Total Debit" sum, refunding the user.
-
-    return prisma.transaction.update({
-      where: { id: transactionId },
-      data: { status: newStatus }
-    });
-  }
-
-  /**
-   * Approve a rider account.
-   * - Sets isVerified = true (admin approval)
-   * - Sets isOnline  = true so they immediately start receiving jobs
-   */
-  static async approveRider(userId: string) {
-    const user = await prisma.user.findUnique({ where: { id: userId } });
-    if (!user) {
-      throw new Error("User not found");
-    }
-
-    if (user.role !== "RIDER") {
-      throw new Error("User is not a rider");
-    }
-
-    if (!user.isEmailVerified) {
-      throw new Error("Rider email not verified yet");
-    }
-
-    // Mark rider as approved and online by default
-    const updated = await prisma.user.update({
-      where: { id: userId },
-      data: {
-        isVerified: true,
-        isOnline: true,
-      },
+  // ==========================================
+  // 2. USER MANAGEMENT
+  // ==========================================
+  static async getAllUsers(roleFilter?: Role) {
+    const whereClause = roleFilter ? { role: roleFilter } : {};
+    
+    return prisma.user.findMany({
+      where: whereClause,
       select: {
         id: true,
         name: true,
         email: true,
         role: true,
         isVerified: true,
-        isOnline: true,
+        createdAt: true,
       },
+      orderBy: { createdAt: "desc" }
     });
+  }
 
-    return updated;
+  static async approveUser(userId: string) {
+    return prisma.user.update({
+      where: { id: userId },
+      data: { isVerified: true },
+      select: { id: true, name: true, role: true, isVerified: true }
+    });
+  }
+
+  static async deleteUser(userId: string) {
+    return prisma.user.delete({
+      where: { id: userId }
+    });
+  }
+
+  // ==========================================
+  // 3. PAYOUTS MANAGEMENT
+  // ==========================================
+  static async getPayoutRequests() {
+    // Fetch all transactions that are withdrawals
+    return prisma.transaction.findMany({
+      where: { category: TransactionCategory.WITHDRAWAL },
+      include: {
+        user: {
+          select: { name: true, role: true, email: true }
+        }
+      },
+      orderBy: { createdAt: "desc" }
+    });
+  }
+
+  static async markPayoutAsPaid(transactionId: string) {
+    return prisma.transaction.update({
+      where: { id: transactionId },
+      data: { status: TransactionStatus.SUCCESS }
+    });
   }
 }

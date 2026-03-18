@@ -79,7 +79,7 @@ app.use("/api/orders", orderRouter);
 app.use("/api/payment", paymentRouter);
 app.use("/api/rider", riderRoute);
 app.use("/api/vendor", vendorRoutes)
-app.use("api/admin", adminRouter)
+app.use("/api/admin", adminRouter)
 
 // 6. SENTRY ERROR HANDLER (New v8 Syntax)
 // Must be placed after all controllers/routes and before your custom error handler

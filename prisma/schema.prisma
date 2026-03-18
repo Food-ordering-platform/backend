@@ -1,5 +1,3 @@
-// This is your Prisma schema file
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -9,234 +7,185 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// ================= USER & AUTH =================
-
 model User {
-  id              String       @id @default(uuid())
+  id              String        @id @default(uuid())
   name            String
-  email           String       @unique
-  password        String?      // Made it optional to allow google auth users
-  phone           String?      // Made it optional to allow google auth users
-  address         String?      
-  role            Role         @default(CUSTOMER)
-  
-  restaurant      Restaurant?  @relation("RestaurantOwner") 
-  orders          Order[]      @relation("CustomerOrders")
-  otp             Otp[]
-
-  googleId        String?      @unique // To link Google accounts reliably
-  avatar          String?      // Good for professional profile feel
+  email           String        @unique
+  password        String?
+  address         String?
+  phone           String?
+  role            Role          @default(CUSTOMER)
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  isVerified      Boolean       @default(false)
+  avatar          String?
+  googleId        String?       @unique
   pushToken       String?
-
   latitude        Float?
   longitude       Float?
-
-  // The orders this user (Rider) has delivered
-  deliveries      Order[]  @relation("RiderOrders")
-
-  transactions Transaction[]
-
-  createdAt       DateTime     @default(now())
-  updatedAt       DateTime     @updatedAt
-  isVerified      Boolean      @default(false)
-  isEmailVerified Boolean      @default(false)
-
   termsAcceptedAt DateTime?
+  isOnline        Boolean       @default(false)
+  isEmailVerified Boolean       @default(false)
+  orders          Order[]       @relation("CustomerOrders")
+  deliveries      Order[]       @relation("RiderOrders")
+  otp             Otp[]
+  restaurant      Restaurant?   @relation("RestaurantOwner")
+  transactions    Transaction[]
 
-  isOnline        Boolean      @default(false)
-
-  // 🟢 NEW INDEXES
-  // Frequently used to find online riders or filter users by role
   @@index([role])
   @@index([isOnline])
-  // Often used for login/verification lookups if phone auth is added later
-  @@index([phone]) 
+  @@index([phone])
 }
 
 model Otp {
   id        String   @id @default(cuid())
   code      String
   userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   createdAt DateTime @default(now())
   expiresAt DateTime
   used      Boolean  @default(false)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  // 🟢 NEW INDEXES
-  // Crucial for fast OTP validation queries where we check code + userId + used + expiresAt
   @@index([userId, code])
   @@index([expiresAt])
 }
 
-
-// ================= RESTAURANT MANAGEMENT =================
-
 model Restaurant {
-  id           String        @id @default(uuid())
+  id           String         @id @default(uuid())
   name         String
-  email        String        @unique 
   address      String
   phone        String
-  imageUrl     String?   
-  slug         String?       @unique 
-  
-  owner        User          @relation("RestaurantOwner", fields: [ownerId], references: [id])
-  ownerId      String        @unique 
-
+  ownerId      String         @unique
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+  imageUrl     String?
+  isOpen       Boolean        @default(false)
+  minimumOrder Float          @default(0.0)
+  email        String         @unique
+  prepTime     Int            @default(20)
+  latitude     Float?
+  longitude    Float?
+  rating       Float          @default(0.0)
+  ratingCount  Int            @default(0)
+  slug         String?        @unique
   categories   MenuCategory[]
   menuItems    MenuItem[]
   orders       Order[]
-  
-  // --- SETTINGS ---
-  isOpen       Boolean       @default(false)
-  
-  // Vendor sets only Prep Time.
-  prepTime     Int           @default(20) 
-  minimumOrder Float         @default(0.0) // Can keep this if vendors want to enforce minimums
+  owner        User           @relation("RestaurantOwner", fields: [ownerId], references: [id])
 
-  latitude     Float?        
-  longitude    Float?
-
-  createdAt    DateTime      @default(now())
-  updatedAt    DateTime      @updatedAt
-
-  rating       Float     @default(0.0) // Average rating
-  ratingCount  Int       @default(0)
-
-  // 🟢 NEW INDEXES
-  // Frequently queried to show open restaurants on the customer app
   @@index([isOpen])
-  // Useful if you implement a "Top Rated" sorting feature
   @@index([rating])
 }
 
 model MenuCategory {
-  id           String      @id @default(uuid())
+  id           String     @id @default(uuid())
   name         String
-  restaurant   Restaurant  @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
   restaurantId String
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  restaurant   Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
   menuItems    MenuItem[]
-  
-  createdAt    DateTime    @default(now())
-  updatedAt    DateTime    @updatedAt
 
-  // 🟢 NEW INDEXES
-  // Speeds up loading a specific restaurant's categories
   @@index([restaurantId])
 }
 
 model MenuItem {
   id           String       @id @default(uuid())
   name         String
-  description  String?
   price        Float
-  imageUrl     String?
   available    Boolean      @default(true)
-  
-  restaurant   Restaurant   @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
   restaurantId String
-  
-  category     MenuCategory @relation(fields: [categoryId], references: [id])
-  categoryId   String
-
   createdAt    DateTime     @default(now())
   updatedAt    DateTime     @updatedAt
-  deletedAt    DateTime?    
+  imageUrl     String?
+  categoryId   String
+  deletedAt    DateTime?
+  category     MenuCategory @relation(fields: [categoryId], references: [id])
+  restaurant   Restaurant   @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
 
-  // 🟢 NEW INDEXES
   @@index([restaurantId])
-  // Frequently used to load items within a specific category tab
   @@index([categoryId])
-  // Useful for hiding soft-deleted or unavailable items from the customer menu quickly
-  @@index([available, deletedAt]) 
+  @@index([available, deletedAt])
 }
-
-// ================= ORDERING & LOGISTICS =================
 
 model Order {
   id                  String        @id @default(uuid())
-  
-  customer            User          @relation("CustomerOrders", fields: [customerId], references: [id])
   customerId          String
-  
-  restaurant          Restaurant    @relation(fields: [restaurantId], references: [id])
   restaurantId        String
-
-  items               OrderItem[]
-
-  // --- Financial Snapshot ---
-  totalAmount         Float         
-  deliveryFee         Float         
-  
+  totalAmount         Float
   status              OrderStatus   @default(PENDING)
   paymentStatus       PaymentStatus @default(PENDING)
-  
   deliveryAddress     String
-  deliveryNotes       String? 
-  deliveryPhoneNumber String      
-
-  deliveryLatitude  Float?
-  deliveryLongitude Float?
-
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
+  reference           String        @unique
+  deliveryFee         Float
+  deliveryNotes       String?
+  token               String?       @unique
+  deliveryLatitude    Float?
+  deliveryLongitude   Float?
+  checkoutUrl         String?
   idempotencyKey      String?       @unique
-  checkoutUrl         String?       
+  riderId             String?
+  deliveryCode        String?
+  riderName           String?
+  riderPhone          String?
+  deliveryPhoneNumber String
+  customer            User          @relation("CustomerOrders", fields: [customerId], references: [id])
+  restaurant          Restaurant    @relation(fields: [restaurantId], references: [id])
+  rider               User?         @relation("RiderOrders", fields: [riderId], references: [id])
+  items               OrderItem[]
+  transactions        Transaction[]
 
-  reference           String        @unique 
-  token               String?       @unique 
-
-  // Who is delivering this?
-  riderId            String?
-  rider              User?    @relation("RiderOrders", fields: [riderId], references: [id])
-
-  riderName          String?
-  riderPhone         String?
-
-  // === NEW FIELDS FOR LOGISTICS ===
-  deliveryCode       String?  // The OTP the customer gives the rider
-  
-  transactions Transaction[]
-
-  createdAt          DateTime      @default(now())
-  updatedAt          DateTime      @updatedAt
-
-  // 🟢 EXISTING & NEW INDEXES
   @@index([restaurantId])
   @@index([customerId])
   @@index([status])
   @@index([paymentStatus])
-  // Frequently queried by riders to see their assigned active/past orders
   @@index([riderId])
-  // Very common to sort orders by date (e.g., "Latest Orders" dashboard)
   @@index([createdAt])
 }
 
 model OrderItem {
-  id           String   @id @default(uuid())
-  
-  order        Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  id           String  @id @default(uuid())
   orderId      String
-
-  menuItemName String  
-  menuItemId   String? 
-  
+  menuItemId   String?
   quantity     Int
-  price        Float    
+  price        Float
+  menuItemName String
+  order        Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
 
-  // 🟢 NEW INDEXES
-  // Essential for loading the items belonging to a specific order quickly
   @@index([orderId])
 }
 
-// ================= ENUMS =================
+model Transaction {
+  id          String              @id @default(uuid())
+  userId      String
+  amount      Float
+  type        TransactionType
+  category    TransactionCategory
+  status      TransactionStatus   @default(PENDING)
+  orderId     String?
+  description String?
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+  reference   String?             @unique
+  order       Order?              @relation(fields: [orderId], references: [id])
+  user        User                @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([orderId])
+  @@index([status, type])
+  @@index([createdAt])
+}
 
 enum OrderStatus {
   PENDING
   PREPARING
-  READY_FOR_PICKUP
-  RIDER_ACCEPTED
-  OUT_FOR_DELIVERY 
+  OUT_FOR_DELIVERY
   DELIVERED
   CANCELLED
+  READY_FOR_PICKUP
+  RIDER_ACCEPTED
 }
 
 enum PaymentStatus {
@@ -250,44 +199,12 @@ enum Role {
   CUSTOMER
   VENDOR
   ADMIN
-  RIDER 
-}
-
-model Transaction {
-  id          String              @id @default(uuid())
-  userId      String              
-  user        User                @relation(fields: [userId], references: [id])
-  
-  amount      Float               
-  
-  type        TransactionType     
-  category    TransactionCategory 
-  status      TransactionStatus   @default(PENDING)
-  
-  orderId     String?             
-  order       Order?              @relation(fields: [orderId], references: [id])
-  
-  description String?             
-
-  reference   String?             @unique
-  
-  createdAt   DateTime            @default(now())
-  updatedAt   DateTime            @updatedAt
-
-  // 🟢 NEW INDEXES
-  // For calculating a user's wallet balance or showing their transaction history
-  @@index([userId])
-  // To quickly find transactions related to a specific order (e.g., for refunds)
-  @@index([orderId])
-  // Frequently used to filter pending withdrawals or successful payouts
-  @@index([status, type])
-  // Often sorted by date in transaction logs
-  @@index([createdAt])
+  RIDER
 }
 
 enum TransactionType {
-  CREDIT  
-  DEBIT   
+  CREDIT
+  DEBIT
 }
 
 enum TransactionCategory {

@@ -244,7 +244,6 @@ export class RestaurantService {
     const newItem = await prisma.menuItem.create({
       data: {
         name: data.name,
-        description: data.description,
         price: data.price,
         imageUrl: imageUrl,
         available: true,

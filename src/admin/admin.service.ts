@@ -45,44 +45,47 @@ export class AdminService {
     };
   }
   static async getDashboardAnalytics() {
-    // 1. Get User Counts
-    const [customers, vendors, riders] = await Promise.all([
+    // 1. Get User Counts (Includes Online Riders)
+    const [customers, vendors, riders, onlineRiders] = await Promise.all([
       prisma.user.count({ where: { role: Role.CUSTOMER } }),
       prisma.user.count({ where: { role: Role.VENDOR } }),
       prisma.user.count({ where: { role: Role.RIDER } }),
+      prisma.user.count({ where: { role: Role.RIDER, isOnline: true } }),
     ]);
 
-    // 2. Get Order Stats
-    const totalOrders = await prisma.order.count();
+    // 2. Get Order Stats 
+    // 🟢 FIX: ONLY count orders where the customer actually paid!
+    const totalOrders = await prisma.order.count({
+      where: { paymentStatus: "PAID" } 
+    });
+    
     const deliveredOrders = await prisma.order.count({ 
       where: { status: OrderStatus.DELIVERED } 
     });
+    
+    // 🟢 FIX: Only count paid orders that were later cancelled/failed
     const failedOrders = await prisma.order.count({ 
-      where: { status: OrderStatus.CANCELLED } 
+      where: { status: OrderStatus.CANCELLED, paymentStatus: "PAID" } 
+    });
+    
+    const activeDeliveries = await prisma.order.count({
+      where: { status: { in: [OrderStatus.RIDER_ACCEPTED, OrderStatus.OUT_FOR_DELIVERY] } }
     });
 
     // 3. Get Financial Stats (from PAID orders)
-    // 🟢 Fetch paid orders with items to calculate exact profit
     const paidOrders = await prisma.order.findMany({
       where: { paymentStatus: "PAID" },
-      include: { items: true } // Need items to calculate food subtotal
+      include: { items: true } 
     });
 
     let totalRevenue = 0;
     let totalProfit = 0;
 
     paidOrders.forEach(order => {
-      // Revenue is the total money that entered the system
       totalRevenue += order.totalAmount;
-
-      // Calculate the true food subtotal
       const foodSubtotal = order.items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-      
-      // Calculate what we owe others
       const vendorShare = calculateVendorShare(foodSubtotal);
       const riderShare = calculateRiderShare(order.deliveryFee);
-
-      // 🟢 Profit is whatever is left! (Platform Fee + 15% Vendor Cut + 10% Rider Cut)
       totalProfit += (order.totalAmount - vendorShare - riderShare);
     });
 
@@ -94,10 +97,11 @@ export class AdminService {
       failedOrders,
       customers,
       vendors,
-      riders,
+      riders, 
+      onlineRiders, 
+      activeDeliveries, 
     };
   }
-
 
   // Inside your AdminService class...
 
@@ -156,7 +160,7 @@ export class AdminService {
     return chartData.map(({ year: {}, ...rest }) => rest);
   }
 
-  
+
   // ==========================================
   // 2. USER MANAGEMENT
   // ==========================================

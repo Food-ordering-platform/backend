@@ -1,4 +1,6 @@
 import { PrismaClient, TransactionStatus, TransactionCategory, OrderStatus, Role } from "@prisma/client";
+import bcrypt from "bcryptjs/umd/types";
+import jwt from "jsonwebtoken";
 
 const prisma = new PrismaClient();
 
@@ -6,6 +8,41 @@ export class AdminService {
   // ==========================================
   // 1. ANALYTICS DASHBOARD
   // ==========================================
+  static async loginAdmin(email: string, password: string) {
+    // 1. Find the user and ensure they are an ADMIN
+    const admin = await prisma.user.findUnique({
+      where: { email }
+    });
+
+    if (!admin || admin.role !== "ADMIN") {
+      throw new Error("Invalid admin credentials");
+    }
+
+    if (!admin.password) {
+      throw new Error("Invalid admin credentials");
+    }
+
+    // 2. Verify Password
+    const isMatch = await bcrypt.compare(password, admin.password);
+    if (!isMatch) {
+      throw new Error("Invalid admin credentials");
+    }
+
+    // 3. Generate Token (Valid for 24 hours)
+    const token = jwt.sign(
+      { id: admin.id, role: admin.role, email: admin.email },
+      process.env.JWT_SECRET as string,
+      { expiresIn: "24h" }
+    );
+
+    // Remove password from the returned object
+    const { password: _, ...adminWithoutPassword } = admin;
+
+    return {
+      user: adminWithoutPassword,
+      token,
+    };
+  }
   static async getDashboardAnalytics() {
     // 1. Get User Counts
     const [customers, vendors, riders] = await Promise.all([

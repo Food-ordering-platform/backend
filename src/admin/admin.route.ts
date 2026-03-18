@@ -4,7 +4,7 @@ import { authMiddleware } from "../auth/auth.middleware";
 import { roleMiddleware } from "../auth/auth.middleware";
 
 const router = Router();
-
+router.post("/login", AdminController.login);
 //  RBAC IN ACTION:
 // We array both middlewares. First it checks if they are logged in, 
 // then it strictly verifies their database role is "ADMIN".

@@ -3,6 +3,28 @@ import { AdminService } from "./admin.service";
 import { Role } from "@prisma/client";
 
 export class AdminController {
+
+    // --- Auth ---
+  static async login(req: Request, res: Response) {
+    try {
+      const { email, password } = req.body;
+      
+      if (!email || !password) {
+        return res.status(400).json({ success: false, message: "Email and password are required" });
+      }
+
+      const data = await AdminService.loginAdmin(email, password);
+      
+      return res.status(200).json({ 
+        success: true, 
+        message: "Admin login successful", 
+        ...data 
+      });
+    } catch (error: any) {
+      return res.status(401).json({ success: false, message: error.message || "Login failed" });
+    }
+  }
+  
   // --- Analytics ---
   static async getAnalytics(req: Request, res: Response) {
     try {

@@ -12,6 +12,7 @@ const adminAuth = [authMiddleware, roleMiddleware(["ADMIN"])];
 
 // --- Analytics ---
 router.get("/analytics", adminAuth, AdminController.getAnalytics);
+router.get("/analytics/chart", adminAuth, AdminController.getChartAnalytics);
 
 // --- User Management ---
 router.get("/users", adminAuth, AdminController.getUsers);

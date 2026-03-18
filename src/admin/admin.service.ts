@@ -88,6 +88,78 @@ export class AdminService {
     };
   }
 
+  // Inside your AdminService class...
+
+  // ==========================================
+  // 1.5 CHART ANALYTICS
+  // ==========================================
+  static async getChartData() {
+    // Generate buckets for the last 6 months (e.g., ["Oct", "Nov", "Dec", "Jan", "Feb", "Mar"])
+    const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    const currentDate = new Date();
+    
+    const sixMonthsAgo = new Date();
+    sixMonthsAgo.setMonth(currentDate.getMonth() - 5);
+    sixMonthsAgo.setDate(1); // Start of that month
+    sixMonthsAgo.setHours(0, 0, 0, 0);
+
+    // Fetch Orders for Revenue within the last 6 months
+    const orders = await prisma.order.findMany({
+      where: {
+        paymentStatus: "PAID",
+        createdAt: { gte: sixMonthsAgo }
+      },
+      select: { totalAmount: true, createdAt: true }
+    });
+
+    // Fetch Transactions for Profit within the last 6 months
+    const profits = await prisma.transaction.findMany({
+      where: {
+        status: TransactionStatus.SUCCESS,
+        category: TransactionCategory.PLATFORM_FEE,
+        createdAt: { gte: sixMonthsAgo }
+      },
+      select: { amount: true, createdAt: true }
+    });
+
+    // Initialize our 6-month array structure
+    const chartData: any = [];
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date();
+      d.setMonth(currentDate.getMonth() - i);
+      chartData.push({ 
+        month: months[d.getMonth()], 
+        year: d.getFullYear(), 
+        Revenue: 0, 
+        Profit: 0 
+      });
+    }
+
+    // Populate the buckets with real data
+    orders.forEach(order => {
+      const monthName = months[order.createdAt.getMonth()];
+      const year = order.createdAt.getFullYear();
+      
+      const bucket = chartData.find((b: { month: string; year: number; }) => b.month === monthName && b.year === year);
+      if (bucket) {
+        bucket.Revenue += order.totalAmount;
+      }
+    });
+
+    profits.forEach(profit => {
+      const monthName = months[profit.createdAt.getMonth()];
+      const year = profit.createdAt.getFullYear();
+      
+      const bucket = chartData.find((b: { month: string; year: number; }) => b.month === monthName && b.year === year);
+      if (bucket) {
+        bucket.Profit += profit.amount;
+      }
+    });
+
+    // Remove the 'year' field before sending to the frontend to keep it clean for the chart
+    return chartData.map(({ year: {}, ...rest }) => rest);
+  }
+
   // ==========================================
   // 2. USER MANAGEMENT
   // ==========================================

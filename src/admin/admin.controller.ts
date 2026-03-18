@@ -24,7 +24,7 @@ export class AdminController {
       return res.status(401).json({ success: false, message: error.message || "Login failed" });
     }
   }
-  
+
   // --- Analytics ---
   static async getAnalytics(req: Request, res: Response) {
     try {
@@ -33,6 +33,18 @@ export class AdminController {
     } catch (error: any) {
       console.error("Admin Analytics Error:", error);
       return res.status(500).json({ success: false, message: "Failed to fetch analytics." });
+    }
+  }
+
+  // Inside your AdminController class...
+
+  static async getChartAnalytics(req: Request, res: Response) {
+    try {
+      const chartData = await AdminService.getChartData();
+      return res.status(200).json({ success: true, data: chartData });
+    } catch (error: any) {
+      console.error("Admin Chart Error:", error);
+      return res.status(500).json({ success: false, message: "Failed to fetch chart analytics." });
     }
   }
 

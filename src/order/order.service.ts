@@ -4,6 +4,7 @@ import {
   TransactionCategory,
   TransactionStatus,
   TransactionType,
+  PaymentStatus
 } from "@prisma/client";
 import { PaymentService } from "../payment/payment.service";
 import { randomBytes } from "crypto";
@@ -85,15 +86,24 @@ export class OrderService {
     customerEmail: string,
     idempotencyKey?: string,
   ) {
+    // 1. Idempotency Check (With Restaurant Status Validation)
     if (idempotencyKey) {
       const existingOrder = await prisma.order.findUnique({
         where: { idempotencyKey },
+        // Fetch the restaurant's current open status dynamically
+        include: { restaurant: { select: { isOpen: true } } } 
       });
 
       if (existingOrder) {
         console.log(
           `🛡️ Idempotency Hit: Returning existing order ${existingOrder.reference}`,
         );
+
+        // 🟢 THE FIX: Block the checkout URL if they are trying to pay after the restaurant closed!
+        if (existingOrder.paymentStatus === PaymentStatus.PENDING && !existingOrder.restaurant.isOpen) {
+          throw new Error("Checkout failed: This restaurant has closed since you initiated this order. You can no longer complete this payment.");
+        }
+
         return {
           order: existingOrder,
           checkoutUrl: existingOrder.checkoutUrl,
@@ -101,6 +111,7 @@ export class OrderService {
       }
     }
 
+    // 2. Fetch Restaurant
     const restaurant = await prisma.restaurant.findUnique({
       where: { id: restaurantId },
       include: { owner: true },
@@ -108,6 +119,12 @@ export class OrderService {
 
     if (!restaurant) throw new Error("Restaurant not found");
 
+    // 🟢 EDGE CASE FIX: Block brand new checkouts if the restaurant is closed!
+    if (!restaurant.isOpen) {
+      throw new Error("Checkout failed: This restaurant is currently closed. Please check back later.");
+    }
+
+    // 3. Calculate Distance and Delivery Fee
     let deliveryFee = 0;
     if (
       restaurant.latitude &&
@@ -126,6 +143,7 @@ export class OrderService {
       deliveryFee = 500;
     }
 
+    // 4. Validate Menu Items and Subtotal
     const menuItemIds = items.map((item) => item.menuItemId);
     const dbMenuItems = await prisma.menuItem.findMany({
       where: { id: { in: menuItemIds } },
@@ -136,7 +154,12 @@ export class OrderService {
 
     const validItems = items.map((i) => {
       const originalItem = itemsMap.get(i.menuItemId);
-      if (!originalItem) throw new Error(`Menu item ${i.menuItemId} not found`);
+      if (!originalItem) throw new Error(`Menu item not found`);
+
+      // 🟢 EDGE CASE FIX: Check if the specific item is still available!
+      if (!originalItem.available) {
+         throw new Error(`Checkout failed: ${originalItem.name} is no longer available.`);
+      }
 
       const itemTotal = originalItem.price * i.quantity;
       subtotal += itemTotal;
@@ -151,6 +174,7 @@ export class OrderService {
 
     const finalTotal = subtotal + deliveryFee + PRICING.PLATFORM_FEE;
 
+    // 5. Generate unique reference
     let reference = generateReference();
     let referenceExists = true;
     while (referenceExists) {
@@ -159,6 +183,7 @@ export class OrderService {
       else reference = generateReference();
     }
 
+    // 6. Initiate Payment Gateway
     const checkoutUrl = await PaymentService.initiatePayment(
       finalTotal,
       customerName,
@@ -166,8 +191,10 @@ export class OrderService {
       reference,
     );
 
+    // 7. Generate Delivery Code
     const deliveryCode = Math.floor(1000 + Math.random() * 9000).toString();
 
+    // 8. Create Order in Database
     const order = await prisma.order.create({
       data: {
         customerId,
@@ -194,6 +221,7 @@ export class OrderService {
 
     return { order, checkoutUrl };
   }
+
 
   // ✅ UPDATED: Sends email with REAL DB reference
  static async processSuccessfulPayment(reference: string) {

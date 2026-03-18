@@ -1,6 +1,7 @@
 import { PrismaClient, TransactionStatus, TransactionCategory, OrderStatus, Role } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
+import { calculateVendorShare, calculateRiderShare } from "../config/pricing";
 
 const prisma = new PrismaClient();
 
@@ -60,25 +61,34 @@ export class AdminService {
       where: { status: OrderStatus.CANCELLED } 
     });
 
-    // 3. Get Financial Stats (from successful transactions)
-    // Revenue: Total sum of all orders
-    const revenueAggr = await prisma.order.aggregate({
-      _sum: { totalAmount: true },
-      where: { paymentStatus: "PAID" }
+    // 3. Get Financial Stats (from PAID orders)
+    // 🟢 Fetch paid orders with items to calculate exact profit
+    const paidOrders = await prisma.order.findMany({
+      where: { paymentStatus: "PAID" },
+      include: { items: true } // Need items to calculate food subtotal
     });
 
-    // Profit: Sum of all platform fees collected
-    const profitAggr = await prisma.transaction.aggregate({
-      _sum: { amount: true },
-      where: { 
-        status: TransactionStatus.SUCCESS, 
-        category: TransactionCategory.PLATFORM_FEE 
-      }
+    let totalRevenue = 0;
+    let totalProfit = 0;
+
+    paidOrders.forEach(order => {
+      // Revenue is the total money that entered the system
+      totalRevenue += order.totalAmount;
+
+      // Calculate the true food subtotal
+      const foodSubtotal = order.items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+      
+      // Calculate what we owe others
+      const vendorShare = calculateVendorShare(foodSubtotal);
+      const riderShare = calculateRiderShare(order.deliveryFee);
+
+      // 🟢 Profit is whatever is left! (Platform Fee + 15% Vendor Cut + 10% Rider Cut)
+      totalProfit += (order.totalAmount - vendorShare - riderShare);
     });
 
     return {
-      revenue: revenueAggr._sum.totalAmount || 0,
-      profit: profitAggr._sum.amount || 0,
+      revenue: totalRevenue,
+      profit: totalProfit,
       totalOrders,
       deliveredOrders,
       failedOrders,
@@ -88,41 +98,30 @@ export class AdminService {
     };
   }
 
+
   // Inside your AdminService class...
 
   // ==========================================
   // 1.5 CHART ANALYTICS
   // ==========================================
   static async getChartData() {
-    // Generate buckets for the last 6 months (e.g., ["Oct", "Nov", "Dec", "Jan", "Feb", "Mar"])
     const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
     const currentDate = new Date();
     
     const sixMonthsAgo = new Date();
     sixMonthsAgo.setMonth(currentDate.getMonth() - 5);
-    sixMonthsAgo.setDate(1); // Start of that month
+    sixMonthsAgo.setDate(1); 
     sixMonthsAgo.setHours(0, 0, 0, 0);
 
-    // Fetch Orders for Revenue within the last 6 months
+    // 🟢 Fetch Orders WITH items to calculate both Revenue and Profit in one pass
     const orders = await prisma.order.findMany({
       where: {
         paymentStatus: "PAID",
         createdAt: { gte: sixMonthsAgo }
       },
-      select: { totalAmount: true, createdAt: true }
+      include: { items: true } 
     });
 
-    // Fetch Transactions for Profit within the last 6 months
-    const profits = await prisma.transaction.findMany({
-      where: {
-        status: TransactionStatus.SUCCESS,
-        category: TransactionCategory.PLATFORM_FEE,
-        createdAt: { gte: sixMonthsAgo }
-      },
-      select: { amount: true, createdAt: true }
-    });
-
-    // Initialize our 6-month array structure
     const chartData: any = [];
     for (let i = 5; i >= 0; i--) {
       const d = new Date();
@@ -135,31 +134,29 @@ export class AdminService {
       });
     }
 
-    // Populate the buckets with real data
     orders.forEach(order => {
       const monthName = months[order.createdAt.getMonth()];
       const year = order.createdAt.getFullYear();
       
       const bucket = chartData.find((b: { month: string; year: number; }) => b.month === monthName && b.year === year);
-      if (bucket) {
-        bucket.Revenue += order.totalAmount;
-      }
-    });
-
-    profits.forEach(profit => {
-      const monthName = months[profit.createdAt.getMonth()];
-      const year = profit.createdAt.getFullYear();
       
-      const bucket = chartData.find((b: { month: string; year: number; }) => b.month === monthName && b.year === year);
       if (bucket) {
-        bucket.Profit += profit.amount;
+        // Add to Revenue
+        bucket.Revenue += order.totalAmount;
+
+        // 🟢 Calculate and add to Profit
+        const foodSubtotal = order.items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+        const vendorShare = calculateVendorShare(foodSubtotal);
+        const riderShare = calculateRiderShare(order.deliveryFee);
+        
+        bucket.Profit += (order.totalAmount - vendorShare - riderShare);
       }
     });
 
-    // Remove the 'year' field before sending to the frontend to keep it clean for the chart
     return chartData.map(({ year: {}, ...rest }) => rest);
   }
 
+  
   // ==========================================
   // 2. USER MANAGEMENT
   // ==========================================

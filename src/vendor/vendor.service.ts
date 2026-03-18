@@ -48,12 +48,21 @@ export class VendorService {
     });
 
     return orders.map((order) => {
-      const trueSubtotal = order.items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+      const foodSubtotal = order.items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+      
+      // 2. Use the central BPS logic to get the vendor's 85%
+      const vendorEarning = calculateVendorShare(foodSubtotal);
+      
+      // 3. Derive the commission (15%)
+      const platformCommission = foodSubtotal - vendorEarning;
+
       return {
         ...order,
         riderName: order.riderName,
         riderPhone: order.riderPhone,
-        vendorFoodTotal: calculateVendorShare(trueSubtotal)
+        foodSubtotal, 
+        platformCommission,
+        vendorEarning,
       };
     });
   }

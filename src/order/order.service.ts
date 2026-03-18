@@ -14,7 +14,7 @@ import {
 } from "../utils/email/email.service";
 import { sendPushNotification } from "../utils/notification";
 import { calculateDistance, calculateDeliveryFee } from "../utils/haversine";
-import { PRICING, calculateVendorShare as globalCalculateVendorShare } from "../config/pricing";
+import { PRICING, calculateVendorShare } from "../config/pricing";
 import { OrderStateMachine } from "../utils/order-state-machine";
 import { sendPushToRiders, sendPushToVendor } from "../utils/push-notification";
 
@@ -25,9 +25,7 @@ function generateReference(): string {
 }
 
 export class OrderService {
- static calculateVendorShare(totalAmount: number, deliveryFee: number): number {
-    return globalCalculateVendorShare(totalAmount, deliveryFee);
-  }
+ 
 
   static async getOrderQuote(
     restaurantId: string,

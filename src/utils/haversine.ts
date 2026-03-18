@@ -1,4 +1,4 @@
-//Haversine formular for calculating distance between 2 points on the earth
+import { PRICING } from "../config/pricing"; // 🟢 Import the central config
 
 const TORTUOSITY_FACTOR = 1.5;
 
@@ -23,21 +23,21 @@ export const calculateDistance = (
       Math.sin(dLon / 2);
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   const airDistance =  R * c;
-  return airDistance  * TORTUOSITY_FACTOR
+  
+  return airDistance * TORTUOSITY_FACTOR;
 };
 
-export const calculateDeliveryFee = (distanceKm: number) : number => {
-  const BASE_DISTANCE = 2; // First 2km
-  const BASE_FEE = 700;
-  const PER_KM_RATE = 150;
+export const calculateDeliveryFee = (distanceKm: number): number => {
+  // 🟢 Read from the single source of truth
+  const { DELIVERY_BASE_DISTANCE_KM, DELIVERY_BASE_FEE, DELIVERY_PER_KM_RATE } = PRICING;
 
-  if (distanceKm <= BASE_DISTANCE) {
-    return BASE_FEE;
+  if (distanceKm <= DELIVERY_BASE_DISTANCE_KM) {
+    return DELIVERY_BASE_FEE;
   }
 
-  const extraKm = distanceKm - BASE_DISTANCE;
-  const extraFee = extraKm * PER_KM_RATE;
+  const extraKm = distanceKm - DELIVERY_BASE_DISTANCE_KM;
+  const extraFee = extraKm * DELIVERY_PER_KM_RATE;
   
-  // Return total fee rounded to nearest whole number
-  return Math.ceil(BASE_FEE + extraFee);
+  // Return total fee rounded up to the nearest whole Naira
+  return Math.ceil(DELIVERY_BASE_FEE + extraFee);
 }

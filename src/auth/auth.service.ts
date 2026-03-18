@@ -1,12 +1,12 @@
 // food-ordering-platform/backend/backend-main/src/auth/auth.service.ts
 
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient, } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import { OAuth2Client } from "google-auth-library"
 import { randomInt } from "crypto";
 import jwt from "jsonwebtoken";
 import dayjs from "dayjs";
-import { sendLoginAlertEmail, sendOtPEmail } from "../utils/email/email.service";
+import { sendLoginAlertEmail, sendOtPEmail, sendRiderVerificationPendingEmail } from "../utils/email/email.service";
 
 const prisma = new PrismaClient();
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID)
@@ -73,7 +73,10 @@ export class AuthService {
     const code = await this.generateOtp(result.id);
 
     sendOtPEmail(result.email, code).catch(err => console.error("Failed to send OTP email:", err));
-
+    if (result.role === "RIDER") {
+      sendRiderVerificationPendingEmail(result.email, result.name)
+        .catch(err => console.error("Failed to send Rider pending email:", err));
+    }
     return { user: result };
   }
 

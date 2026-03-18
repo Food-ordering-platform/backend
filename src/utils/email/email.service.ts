@@ -180,27 +180,24 @@ export async function sendDeliveryCode(
 }
 
 // --- ADMIN PAYOUT ALERT ---
+// --- ADMIN PAYOUT ALERT ---
 export async function sendAdminPayoutAlert(
-  vendorName: string,
+  requesterName: string, // Changed from vendorName to be generic (Vendor or Rider)
   amount: number,
   bankDetails: any
 ) {
-  const adminEmail = process.env.ADMIN_EMAIL;
-  console.log(`[EmailService] Sending Admin Payout Alert. Admin Email: ${adminEmail}`); // <--- LOG
+  // 🟢 Fix: Fallback directly to admin@choweazy.com if env var is missing
+  const adminEmail = process.env.ADMIN_EMAIL || "admin@choweazy.com";
+  console.log(`[EmailService] Sending Admin Payout Alert. Admin Email: ${adminEmail}`); 
   
-  if (!adminEmail) {
-    console.warn("⚠️ ADMIN_EMAIL is not defined in .env");
-    return;
-  }
-
   try {
     const html = generateEmailHTML(
       "New Payout Request",
       `
-        <p><b>Vendor:</b> ${vendorName}</p>
+        <p><b>Requester:</b> ${requesterName}</p>
 
-        <div style="background:#FFF1F0;padding:15px;border-radius:8px;border:1px solid #7b1e3a;">
-          <div style="font-size:20px;font-weight:bold;color:#7b1e3a;">
+        <div style="background:#FFF1F0;padding:15px;border-radius:8px;border:1px solid #7b1e3a;margin:20px 0;">
+          <div style="font-size:24px;font-weight:bold;color:#7b1e3a;">
             ₦${amount.toLocaleString()}
           </div>
         </div>
@@ -208,25 +205,28 @@ export async function sendAdminPayoutAlert(
         <p>
           <b>Bank:</b> ${bankDetails.bankName}<br/>
           <b>Acct:</b> ${bankDetails.accountNumber}<br/>
-          <b>Name:</b> ${bankDetails.accountName}
+          <b>Name:</b> ${bankDetails.accountName || "Not Provided"}
         </p>
 
-        <p>Please log in to the admin dashboard to approve or reject.</p>
+        <p style="margin-top: 20px;">
+          Please log in to your <a href="https://admin.choweazy.com" style="color:#7b1e3a; font-weight:bold;">Admin Dashboard</a> to manually transfer the funds and mark the request as Paid.
+        </p>
       `,
       "💰"
     );
 
     await sendEmail({
       to: adminEmail,
-      subject: `Payout Request: ${vendorName}`,
+      subject: `💰 Action Required: Payout Request from ${requesterName}`,
       html,
     });
 
-    console.log(`✅ Admin Payout Alert sent`);
+    console.log(`✅ Admin Payout Alert sent to ${adminEmail}`);
   } catch (err: any) {
     console.error("❌ Admin Alert Failed:", err.message);
   }
 }
+
 
 // --- PAYOUT REQUEST (VENDOR/RIDER) ---
 /**
@@ -315,5 +315,40 @@ export async function sendRestaurantVerificationPendingEmail(
     
   } catch (err: any) {
     console.error("❌ Verification Pending Email Failed:", err.message);
+  }
+}
+// --- RIDER VERIFICATION PENDING ---
+export async function sendRiderVerificationPendingEmail(
+  email: string,
+  riderName: string,
+) {
+  console.log(`[EmailService] Sending Rider Verification Pending Email to: ${email}`); 
+  try {
+    const html = generateEmailHTML(
+      "Application Under Review ⏳",
+      `
+        <p>Welcome to the ChowEazy fleet, <b>${riderName}</b>!</p>
+        
+        <div style="background:#FFFBEB; border: 1px solid #FEF3C7; padding:20px; border-radius:12px; margin:20px 0;">
+          <div style="font-size:16px; color:#92400E; line-height: 1.5;">
+            To ensure the safety of our customers, our admin team must manually verify all rider applications. 
+            This process usually takes <b style="color:#B45309;">24-48 hours</b>.
+          </div>
+        </div>
+
+        <p>In the meantime, please complete your email verification using the OTP sent to you.</p>
+        <p>You will receive another email as soon as your account is approved and activated!</p>
+      `,
+      "🛵"
+    );
+
+    await sendEmail({
+      to: email,
+      subject: "⏳ Rider Application Received",
+      html,
+    });
+    
+  } catch (err: any) {
+    console.error("❌ Rider Verification Pending Email Failed:", err.message);
   }
 }

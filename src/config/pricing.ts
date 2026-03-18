@@ -22,9 +22,8 @@ export const calculateBPS = (amount: number, bps: number): number => {
 /**
  * Vendor gets 85% of the FOOD REVENUE only
  */
-export const calculateVendorShare = (totalAmount: number, deliveryFee: number): number => {
-  const foodRevenue = totalAmount - deliveryFee - PRICING.PLATFORM_FEE;
-  const vendorShare = calculateBPS(foodRevenue, PRICING.VENDOR_SHARE_BPS);
+export const calculateVendorShare = (subtotal: number): number => {
+  const vendorShare = calculateBPS(subtotal, PRICING.VENDOR_SHARE_BPS);
   return Math.max(0, vendorShare);
 };
 

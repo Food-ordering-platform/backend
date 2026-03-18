@@ -48,14 +48,12 @@ export class VendorService {
     });
 
     return orders.map((order) => {
+      const trueSubtotal = order.items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
       return {
         ...order,
         riderName: order.riderName,
         riderPhone: order.riderPhone,
-        vendorFoodTotal: calculateVendorShare(
-          Number(order.totalAmount),
-          Number(order.deliveryFee)
-        ),
+        vendorFoodTotal: calculateVendorShare(trueSubtotal)
       };
     });
   }
@@ -119,10 +117,12 @@ export class VendorService {
       const updated = await tx.order.update({
         where: { id: orderId },
         data: { status: OrderStatus.READY_FOR_PICKUP },
-        include: { restaurant: true, customer: true },
+        include: { restaurant: true, customer: true, items:true },
       });
 
-      const vendorShare = calculateVendorShare(Number(updated.totalAmount), Number(updated.deliveryFee));
+      const trueSubtotal = updated.items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+      const vendorShare = calculateVendorShare(trueSubtotal); //  Use the true subtotal
+
       
       const existingTx = await tx.transaction.findFirst({
         where: { orderId: updated.id, category: TransactionCategory.ORDER_EARNING },
@@ -235,14 +235,18 @@ export class VendorService {
           status: { in: ["PREPARING"] }, 
           paymentStatus: "PAID",
         },
+        include:{
+          items:true
+        }
       });
 
       pendingBalance = activeOrders.reduce((sum, order) => {
-        return (
-          sum + calculateVendorShare(Number(order.totalAmount), Number(order.deliveryFee))
-        );
+        //  Calculate the exact food total
+        const trueSubtotal = order.items.reduce((s, item) => s + (item.price * item.quantity), 0);
+        return sum + calculateVendorShare(trueSubtotal); //  Use the true subtotal
       }, 0);
     }
+    
 
     return {
       availableBalance,

@@ -273,58 +273,76 @@ export class AdminService {
     const workbook = new ExcelJS.Workbook();
     const worksheet = workbook.addWorksheet('Weekly Settlement');
 
-    // Define the exact columns promised in the Partnership Proposal
+    // 🟢 1. NEW COLUMNS: A complete breakdown of the money
     worksheet.columns = [
       { header: 'Rider Name', key: 'riderName', width: 25 },
-      { header: 'Total Deliveries', key: 'totalDeliveries', width: 15 },
-      { header: 'Total Distance (KM)', key: 'totalDistance', width: 20 },
-      { header: 'On-Time Rate (%)', key: 'onTimeRate', width: 15 },
-      { header: 'Customer Rating', key: 'customerRating', width: 15 },
-      { header: 'Total Earnings (₦)', key: 'totalEarnings', width: 20 },
+      { header: 'Deliveries', key: 'totalDeliveries', width: 12 },
+      { header: 'Distance (KM)', key: 'totalDistance', width: 15 },
+      { header: 'Gross Fees (100%)', key: 'grossFees', width: 20 },      // What customer paid
+      { header: 'Platform Fee (10%)', key: 'platformFee', width: 20 },  // ChowEazy's cut
+      { header: 'Net Payout (90%)', key: 'netPayout', width: 20 },      // Logistics cut
     ];
 
-    // Style the header row
     worksheet.getRow(1).font = { bold: true };
     worksheet.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFEFEFEF' } };
 
+    // 🟢 2. TRACK GRAND TOTALS
+    let grandTotalGross = 0;
+    let grandTotalPlatform = 0;
     let grandTotalPayout = 0;
 
-    // Process each rider
     for (const rider of company.riders) {
-    // Inside your excel generator loop:
-      let riderEarnings = 0;
       let totalRiderDistance = 0;
+      let riderGrossFees = 0;
+      let riderPlatformFee = 0;
+      let riderNetPayout = 0;
 
       for (const order of rider.deliveries) {
-        // Calculate 90% of the delivery fee for the rider
-        const payoutForOrder = calculateRiderShare(order.deliveryFee);
-        riderEarnings += payoutForOrder;
+        // The deliveryFee in the database is the 100% amount
+        const gross = order.deliveryFee;
+        const net = calculateRiderShare(order.deliveryFee); // Uses your 90% logic
+        const platform = gross - net; // The remaining 10%
 
-        // 🟢 Just read it straight from the database!
-        totalRiderDistance += (order.deliveryDistance|| 0); 
+        riderGrossFees += gross;
+        riderNetPayout += net;
+        riderPlatformFee += platform;
+        totalRiderDistance += (order.deliveryDistance || 0); 
       }
 
-      // Add to Excel...
+      // Add to Grand Totals
+      grandTotalGross += riderGrossFees;
+      grandTotalPlatform += riderPlatformFee;
+      grandTotalPayout += riderNetPayout;
+
+      // Add Rider Row
       worksheet.addRow({
         riderName: rider.name,
         totalDeliveries: rider.deliveries.length,
-        totalDistance: totalRiderDistance.toFixed(1), // Clean 1 decimal place
-        totalEarnings: riderEarnings
+        totalDistance: totalRiderDistance.toFixed(1),
+        grossFees: riderGrossFees,
+        platformFee: riderPlatformFee,
+        netPayout: riderNetPayout
       });
     }
 
-    // Add Grand Total Row
-    worksheet.addRow({});
+    // 🟢 3. ADD THE GRAND TOTAL SUMMARY ROW
+    worksheet.addRow({}); // Empty row for spacing
     const totalRow = worksheet.addRow({
       riderName: 'GRAND TOTAL DUE',
-      totalEarnings: grandTotalPayout
+      grossFees: grandTotalGross,
+      platformFee: grandTotalPlatform,
+      netPayout: grandTotalPayout // This is the exact amount you transfer to their bank
     });
+    
     totalRow.font = { bold: true, size: 12 };
-    totalRow.getCell('totalEarnings').numFmt = '₦#,##0.00';
+    
+    // Format the currency columns nicely
+    ['grossFees', 'platformFee', 'netPayout'].forEach(key => {
+        worksheet.getColumn(key).numFmt = '₦#,##0.00';
+    });
 
     return await workbook.xlsx.writeBuffer();
   }
-
   // ==========================================
   // LOGISTICS PAYOUT (Matches Rider/Vendor Style)
   // ==========================================

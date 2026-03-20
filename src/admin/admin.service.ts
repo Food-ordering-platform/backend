@@ -1,7 +1,8 @@
-import { PrismaClient, TransactionStatus, TransactionCategory, OrderStatus, Role } from "@prisma/client";
+import { PrismaClient, TransactionStatus, TransactionCategory, OrderStatus, Role, TransactionType } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
-import { calculateVendorShare, calculateRiderShare } from "../config/pricing";
+import { calculateVendorShare, calculateRiderShare, PRICING } from "../config/pricing";
+import ExcelJS from 'exceljs';
 
 const prisma = new PrismaClient();
 
@@ -215,6 +216,188 @@ export class AdminService {
     return prisma.transaction.update({
       where: { id: transactionId },
       data: { status: TransactionStatus.SUCCESS }
+    });
+  }
+
+  // ==========================================
+  // 4. LOGISTICS FLEET MANAGEMENT
+  // ==========================================
+  static async createLogisticsCompany(data: {
+    name: string;
+    managerEmail: string;
+    bankName: string;
+    accountNumber: string;
+    showEarningsToRiders: boolean;
+  }) {
+    // Generate a unique 6-character invite code (e.g., SWIFT-9A2B)
+    const randomString = Math.random().toString(36).substring(2, 6).toUpperCase();
+    const prefix = data.name.substring(0, 3).toUpperCase();
+    const inviteCode = `${prefix}-${randomString}`;
+
+    return prisma.logisticsCompany.create({
+      data: {
+        ...data,
+        inviteCode,
+      }
+    });
+  }
+
+  static async getLogisticsCompanies() {
+    return prisma.logisticsCompany.findMany({
+      include: {
+        _count: { select: { riders: true } } // Shows how many riders joined!
+      },
+      orderBy: { createdAt: "desc" }
+    });
+  }
+
+  static async generateCompanySettlement(companyId: string, startDate: Date, endDate: Date) {
+    const company = await prisma.logisticsCompany.findUnique({
+      where: { id: companyId },
+      include: {
+        riders: {
+          include: {
+            deliveries: {
+              where: {
+                status: 'DELIVERED',
+                updatedAt: { gte: startDate, lte: endDate }
+              }
+            }
+          }
+        }
+      }
+    });
+
+    if (!company) throw new Error("Logistics company not found");
+
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet('Weekly Settlement');
+
+    // Define the exact columns promised in the Partnership Proposal
+    worksheet.columns = [
+      { header: 'Rider Name', key: 'riderName', width: 25 },
+      { header: 'Total Deliveries', key: 'totalDeliveries', width: 15 },
+      { header: 'Total Distance (KM)', key: 'totalDistance', width: 20 },
+      { header: 'On-Time Rate (%)', key: 'onTimeRate', width: 15 },
+      { header: 'Customer Rating', key: 'customerRating', width: 15 },
+      { header: 'Total Earnings (₦)', key: 'totalEarnings', width: 20 },
+    ];
+
+    // Style the header row
+    worksheet.getRow(1).font = { bold: true };
+    worksheet.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFEFEFEF' } };
+
+    let grandTotalPayout = 0;
+
+    // Process each rider
+    for (const rider of company.riders) {
+    // Inside your excel generator loop:
+      let riderEarnings = 0;
+      let totalRiderDistance = 0;
+
+      for (const order of rider.deliveries) {
+        // Calculate 90% of the delivery fee for the rider
+        const payoutForOrder = calculateRiderShare(order.deliveryFee);
+        riderEarnings += payoutForOrder;
+
+        // 🟢 Just read it straight from the database!
+        totalRiderDistance += (order.deliveryDistance|| 0); 
+      }
+
+      // Add to Excel...
+      worksheet.addRow({
+        riderName: rider.name,
+        totalDeliveries: rider.deliveries.length,
+        totalDistance: totalRiderDistance.toFixed(1), // Clean 1 decimal place
+        totalEarnings: riderEarnings
+      });
+    }
+
+    // Add Grand Total Row
+    worksheet.addRow({});
+    const totalRow = worksheet.addRow({
+      riderName: 'GRAND TOTAL DUE',
+      totalEarnings: grandTotalPayout
+    });
+    totalRow.font = { bold: true, size: 12 };
+    totalRow.getCell('totalEarnings').numFmt = '₦#,##0.00';
+
+    return await workbook.xlsx.writeBuffer();
+  }
+
+  // ==========================================
+  // LOGISTICS PAYOUT (Matches Rider/Vendor Style)
+  // ==========================================
+  static async recordCompanyPayout(companyId: string) {
+    const company = await prisma.logisticsCompany.findUnique({
+      where: { id: companyId },
+      include: { riders: true }
+    });
+    
+    if (!company) throw new Error("Company not found");
+
+    // 1. Calculate the total available balance for ALL riders in the fleet
+    let totalFleetBalance = 0;
+    
+    for (const rider of company.riders) {
+      // Just sum up the successful credits vs debits for each rider
+      const txns = await prisma.transaction.findMany({
+        where: { userId: rider.id }
+      });
+      
+      const balance = txns.reduce((sum, txn) => {
+        if (txn.status !== 'SUCCESS') return sum;
+        return txn.type === 'CREDIT' ? sum + txn.amount : sum - txn.amount;
+      }, 0);
+
+      totalFleetBalance += balance;
+    }
+
+    if (totalFleetBalance <= 0) {
+      throw new Error("This company has no outstanding balance to pay.");
+    }
+
+    // 2. Atomic Transaction: Debit all riders at once
+    return await prisma.$transaction(async (tx) => {
+      const debitPromises = company.riders.map(rider => 
+        tx.transaction.create({
+          data: {
+            userId: rider.id,
+            amount: 0, // We will calculate their specific cut in a sec
+            type: TransactionType.DEBIT,
+            category: TransactionCategory.WITHDRAWAL,
+            status: TransactionStatus.SUCCESS, //  Auto-Success because Admin triggered it
+            description: `Weekly Bulk Settlement paid to ${company.name}`,
+            reference: `FLT-PAY-${company.id.substring(0,5)}-${Date.now()}`
+          }
+        })
+      );
+
+      // We actually need to find each rider's specific balance to zero them out properly
+      for (let i = 0; i < company.riders.length; i++) {
+         const rider = company.riders[i];
+         const txns = await tx.transaction.findMany({ where: { userId: rider.id, status: 'SUCCESS' } });
+         const balance = txns.reduce((sum, t) => t.type === 'CREDIT' ? sum + t.amount : sum - t.amount, 0);
+         
+         if (balance > 0) {
+            await tx.transaction.create({
+              data: {
+                userId: rider.id,
+                amount: balance, // 🟢 Debits exact amount they were owed
+                type: 'DEBIT',
+                category: 'WITHDRAWAL',
+                status: 'SUCCESS',
+                description: `Weekly Bulk Settlement paid to ${company.name}`,
+                reference: `FLT-PAY-${rider.id.substring(0,5)}-${Date.now()}`
+              }
+            });
+         }
+      }
+
+      return { 
+        success: true, 
+        message: `Successfully recorded ₦${totalFleetBalance} payout for ${company.name}` 
+      };
     });
   }
 }

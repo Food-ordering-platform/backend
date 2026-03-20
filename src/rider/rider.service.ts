@@ -29,14 +29,14 @@ export class RiderService {
   }
 
   //1. Fetch available orders (ONLY if rider is free)
-static async getAvailableOrders(riderId: string) {
+  static async getAvailableOrders(riderId: string) {
     const rider = await prisma.user.findUnique({
       where: { id: riderId },
       select: { isOnline: true },
     });
 
     if (!rider || !rider.isOnline) {
-      return []; 
+      return [];
     }
 
     const activeOrder = await prisma.order.findFirst({
@@ -49,13 +49,13 @@ static async getAvailableOrders(riderId: string) {
     });
 
     if (activeOrder) {
-      return []; 
+      return [];
     }
 
     const orders = await prisma.order.findMany({
       where: {
         status: OrderStatus.READY_FOR_PICKUP,
-        riderId: null, 
+        riderId: null,
       },
       select: {
         id: true,
@@ -92,14 +92,13 @@ static async getAvailableOrders(riderId: string) {
     });
 
     // 🟢 Map to only show the 90% share
-    return orders.map(order => ({
+    return orders.map((order) => ({
       ...order,
-      deliveryFee: calculateRiderShare(order.deliveryFee)
+      deliveryFee: calculateRiderShare(order.deliveryFee),
     }));
   }
 
-
- static async getActiveOrder(riderId: string) {
+  static async getActiveOrder(riderId: string) {
     const order = await prisma.order.findFirst({
       where: {
         riderId: riderId,
@@ -136,7 +135,7 @@ static async getAvailableOrders(riderId: string) {
     // 🟢 Return the order with the calculated 90% share
     return {
       ...order,
-      deliveryFee: calculateRiderShare(order.deliveryFee)
+      deliveryFee: calculateRiderShare(order.deliveryFee),
     };
   }
 
@@ -439,28 +438,27 @@ static async getAvailableOrders(riderId: string) {
     });
   }
 
- static async getDeliveryHistory(riderId: string) {
+  static async getDeliveryHistory(riderId: string) {
     const orders = await prisma.order.findMany({
       where: {
         riderId: riderId,
-        status: { in: [OrderStatus.DELIVERED, OrderStatus.CANCELLED] }, 
+        status: { in: [OrderStatus.DELIVERED, OrderStatus.CANCELLED] },
       },
       include: {
         restaurant: { select: { name: true, imageUrl: true, address: true } },
         customer: { select: { name: true } },
-        items: { select: { quantity: true, menuItemName: true } }, 
+        items: { select: { quantity: true, menuItemName: true } },
       },
       orderBy: { updatedAt: "desc" },
     });
 
     // 🟢 Map the history to show only the 90% share earned per order
-    return orders.map(order => ({
+    return orders.map((order) => ({
       ...order,
-      deliveryFee: calculateRiderShare(order.deliveryFee)
+      deliveryFee: calculateRiderShare(order.deliveryFee),
     }));
   }
 
-  
   static async updateRiderStatus(userId: string, isOnline: boolean) {
     // 1. Update the user
     const updatedUser = await prisma.user.update({
@@ -480,7 +478,12 @@ static async getAvailableOrders(riderId: string) {
   //Get rider transaction
   static async getTransactions(userId: string) {
     return await prisma.transaction.findMany({
-      where: { userId },
+      where: {
+        userId,
+        NOT: {
+          reference: { startsWith: "FLT-PAY" },
+        },
+      },
       orderBy: { createdAt: "desc" },
       take: 50,
     });

@@ -122,6 +122,7 @@ model Order {
   updatedAt           DateTime      @updatedAt
   reference           String        @unique
   deliveryFee         Float
+  deliveryDistance     Float?
   deliveryNotes       String?
   token               String?       @unique
   deliveryLatitude    Float?

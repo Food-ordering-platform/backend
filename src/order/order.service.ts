@@ -119,21 +119,23 @@ export class OrderService {
 
     // 3. Calculate Distance and Delivery Fee
     let deliveryFee = 0;
+    let deliveryDistance = 0
     if (
       restaurant.latitude &&
       restaurant.longitude &&
       deliveryLatitude &&
       deliveryLongitude
     ) {
-      const distance = calculateDistance(
+      deliveryDistance = calculateDistance(
         restaurant.latitude,
         restaurant.longitude,
         deliveryLatitude,
         deliveryLongitude,
       );
-      deliveryFee = calculateDeliveryFee(distance);
+      deliveryFee = calculateDeliveryFee(deliveryDistance);
     } else {
-      deliveryFee = 500;
+      deliveryFee = 800;
+      deliveryDistance = 2
     }
 
     // 4. Validate Menu Items and Subtotal
@@ -194,8 +196,9 @@ export class OrderService {
         restaurantId,
         totalAmount: finalTotal,
         deliveryFee: deliveryFee,
-        paymentStatus: "PENDING",
-        status: "PENDING",
+        paymentStatus: PaymentStatus.PENDING,
+        status: OrderStatus.PENDING,
+        deliveryDistance:parseFloat(deliveryDistance.toFixed(2)),
         deliveryAddress,
         deliveryPhoneNumber,
         deliveryNotes: deliveryNotes || null,

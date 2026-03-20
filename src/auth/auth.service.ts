@@ -207,7 +207,7 @@ export class AuthService {
   
 
 
-  static async getMe(userId: string) {
+ static async getMe(userId: string) {
     const user = await prisma.user.findUnique({
       where: { id: userId },
       select: {
@@ -218,9 +218,16 @@ export class AuthService {
         isVerified: true,
         latitude: true,
         longitude: true,
-        address: true, // Make sure address is returned
+        address: true, 
         phone: true,
-        restaurant: true
+        restaurant: true,
+        // 🟢 NEW: Send the logistics config to the mobile app!
+        logisticsCompany: {
+          select: {
+            name: true,
+            showEarningsToRiders: true
+          }
+        }
       }
     })
     if (!user) {
@@ -228,7 +235,6 @@ export class AuthService {
     }
     return user;
   }
-
 
   static async updateProfile(userId: string, data: {
     name?: string;

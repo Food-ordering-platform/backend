@@ -23,6 +23,10 @@ router.delete("/users/:id", adminAuth, AdminController.deleteUser);
 router.get("/payouts", adminAuth, AdminController.getPayouts);
 router.patch("/payouts/:id/pay", adminAuth, AdminController.markPayoutPaid);
 
+// --- Logistics Management ---
+router.post("/logistics", adminAuth, AdminController.createLogisticsCompany);
+router.get("/logistics", adminAuth, AdminController.getLogisticsCompanies);
+
 // --- Weekly Settlements ---
 router.get("/logistics/:companyId/settlement", adminAuth, AdminController.downloadCompanySettlement);
 router.post("/logistics/:companyId/mark-paid", adminAuth, AdminController.markCompanyPaid);

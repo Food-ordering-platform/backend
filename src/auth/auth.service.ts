@@ -13,6 +13,7 @@ const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID)
 
 export class AuthService {
   // ------------------ REGISTER ------------------
+ // ------------------ REGISTER ------------------
   static async registerUser(
     name: string,
     email: string,
@@ -20,8 +21,27 @@ export class AuthService {
     phone: string,
     role: "CUSTOMER" | "VENDOR" | "RIDER" = "CUSTOMER",
     termsAcceptedAt: Date,
-    address?: string
+    address?: string,
+    inviteCode?: string // 🟢 1. ADD THIS OPTIONAL PARAMETER
   ) {
+    let logisticsCompanyId : string | null = null;
+
+    // 🟢 2. THE FLEET ROUTER: If they are a Rider and provided a code, link them!
+    if (role === "RIDER" && inviteCode) {
+      // Clean up the code just in case they added spaces
+      const cleanCode = inviteCode.trim().toUpperCase();
+      
+      const company = await prisma.logisticsCompany.findUnique({
+        where: { inviteCode: cleanCode }
+      });
+
+      if (!company) {
+        throw new Error("Invalid Company Invite Code. Please check with your manager and try again.");
+      }
+      
+      logisticsCompanyId = company.id;
+    }
+
     // 1. Check if user already exists
     const existingUser = await prisma.user.findUnique({ where: { email } });
 
@@ -35,8 +55,9 @@ export class AuthService {
             name: name,
             phone: phone,
             address: address,
-            role: role, // Update role in case they changed it
-            isOnline: role === "RIDER" ? false : false
+            role: role, 
+            isOnline: false,
+            logisticsCompanyId: logisticsCompanyId // 🟢 3. Update relation here too
           }
         });
 
@@ -60,10 +81,10 @@ export class AuthService {
           role,
           isEmailVerified: false,
           isVerified: false,
-          // Rider starts offline; admin approval + toggle controls availability
-          isOnline: role === "RIDER" ? false : false,
+          isOnline: false,
           termsAcceptedAt: termsAcceptedAt,
-          address
+          address,
+          logisticsCompanyId: logisticsCompanyId // 🟢 4. Save relation for new users!
         },
       });
 
@@ -79,6 +100,7 @@ export class AuthService {
     }
     return { user: result };
   }
+
 
   // ------------------ LOGIN ------------------
   static async login(email: string, password: string) {

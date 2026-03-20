@@ -31,6 +31,8 @@ model User {
   otp             Otp[]
   restaurant      Restaurant?   @relation("RestaurantOwner")
   transactions    Transaction[]
+  logisticsCompanyId String?
+  logisticsCompany   LogisticsCompany? @relation("CompanyRiders", fields: [logisticsCompanyId], references: [id])
 
   @@index([role])
   @@index([isOnline])
@@ -176,6 +178,21 @@ model Transaction {
   @@index([orderId])
   @@index([status, type])
   @@index([createdAt])
+}
+
+model LogisticsCompany {
+  id                   String   @id @default(uuid())
+  name                 String
+  managerEmail         String   @unique
+  inviteCode           String   @unique
+  bankName             String
+  accountNumber        String
+  showEarningsToRiders Boolean  @default(false)
+  riders               User[]   @relation("CompanyRiders")
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  @@index([inviteCode])
 }
 
 enum OrderStatus {

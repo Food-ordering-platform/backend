@@ -1,4 +1,4 @@
-import { OrderStatus } from "../../generated/prisma";
+import { OrderStatus } from "@prisma/client";
 
 /**
  * Deterministic Finite Automata (DFA) for Order Lifecycle
@@ -12,13 +12,16 @@ export class OrderStateMachine {
     PENDING: ["PREPARING", "CANCELLED"],
 
     //Kitchen is working
-    PREPARING: ["READY_FOR_PICKUP", "CANCELLED"],
+    PREPARING: ["READY_FOR_PICKUP"],
 
     ///food is ready rider picks it up
-    READY_FOR_PICKUP: ["OUT_FOR_DELIVERY", "CANCELLED"],
+    READY_FOR_PICKUP: ["RIDER_ACCEPTED"],
+
+
+    RIDER_ACCEPTED:["OUT_FOR_DELIVERY"],
 
     //Rider has picked up
-    OUT_FOR_DELIVERY: ["DELIVERED", "CANCELLED"],
+    OUT_FOR_DELIVERY: ["DELIVERED"],
 
     // Terminal States (Accepting States)
     DELIVERED: [],

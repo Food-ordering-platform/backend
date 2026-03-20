@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
-import { PrismaClient } from "../../generated/prisma"; // Adjust path to your generated client
+import { PrismaClient } from "@prisma/client"; // Adjust path to your generated client
 
 const prisma = new PrismaClient();
 
@@ -29,17 +29,17 @@ export const authMiddleware = async (req: Request, res: Response, next: NextFunc
     // 2. 🛡️ SECURITY CHECK: Does this user actually exist and are they verified?
     const user = await prisma.user.findUnique({
         where: { id: userId },
-        select: { id: true, role: true, email: true, isVerified: true }
+        select: { id: true, role: true, email: true, isVerified: true , isEmailVerified: true}
     });
 
     if (!user) {
         return res.status(401).json({ success: false, message: "User no longer exists." });
     }
 
-    if (!user.isVerified) {
-        return res.status(403).json({ success: false, message: "Account not verified. Please verify OTP." });
+   if (!user.isEmailVerified) {
+        return res.status(403).json({ success: false, message: "Email not verified. Please verify OTP." });
     }
-
+    
     // 3. Attach User to Request
     req.user = {
       id: user.id,
@@ -52,3 +52,26 @@ export const authMiddleware = async (req: Request, res: Response, next: NextFunc
     return res.status(401).json({ success: false, message: "Invalid or expired token." });
   }
 };
+
+export const roleMiddleware = (allowedRoles: string[]) => {
+  return (req: Request, res: Response, next: NextFunction) => {
+    // 1. Ensure the user object exists (meaning authMiddleware ran successfully)
+    if (!req.user) {
+      return res.status(401).json({ 
+        success: false, 
+        message: "Unauthorized. Please login first." 
+      });
+    }
+
+    // 2. Check if the user's role is in the list of allowed roles
+    if (!allowedRoles.includes(req.user.role)) {
+      return res.status(403).json({ 
+        success: false, 
+        message: `Access denied. Requires one of: ${allowedRoles.join(", ")}` 
+      });
+    }
+
+    // 3. User is authorized, proceed to the controller
+    next();
+  };
+}

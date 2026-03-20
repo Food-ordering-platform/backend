@@ -3,21 +3,27 @@
 import { Request, Response, NextFunction } from "express";
 import { AuthService } from "./auth.service";
 import { registerSchema, loginSchema } from "./auth.validator";
+import { success } from "zod";
 
 export class AuthController {
-  
   // ------------------ REGISTER ------------------
   static async register(req: Request, res: Response) {
     try {
       const data = registerSchema.parse(req.body);
-      const { user, token } = await AuthService.registerUser(
-        data.name, data.email, data.password, data.phone, data.role, new Date()
+      const result = await AuthService.registerUser(
+        data.name,
+        data.email,
+        data.password,
+        data.phone,
+        data.role,
+        new Date(),
+        data.address,
       );
 
       return res.status(201).json({
         message: "User registered. OTP sent to email",
-        user,
-        token, // Required for verify-otp page
+        data: result,
+        // Required for verify-otp page
       });
     } catch (err: any) {
       return res.status(400).json({ error: err.message });
@@ -25,16 +31,28 @@ export class AuthController {
   }
 
   // ------------------ LOGIN ------------------
+  // ------------------ LOGIN ------------------
   static async login(req: Request, res: Response) {
     try {
       const data = loginSchema.parse(req.body);
       const result = await AuthService.login(data.email, data.password);
 
+      // 🟢 The Fix: Set the Refresh Token in an HttpOnly Cookie
+      if (result.refreshToken) {
+        res.cookie("refreshToken", result.refreshToken, {
+          httpOnly: true,
+          secure: process.env.NODE_ENV === "production", // Only send over HTTPS in production
+          sameSite: process.env.NODE_ENV === "production" ? "none" : "lax", // 'none' is crucial for cross-domain staging
+          maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days in milliseconds
+        });
+      }
+
       return res.status(200).json({
         message: "Login successful",
-        token: result.token,
+        token: result.accessToken, // Using accessToken from the service
+        refreshToken: result.refreshToken,
         user: result.user,
-        requireOtp: result.requireOtp
+        requireOtp: result.requireOtp,
       });
     } catch (err: any) {
       return res.status(400).json({ error: err.message });
@@ -45,18 +63,28 @@ export class AuthController {
   static async googleLogin(req: Request, res: Response) {
     try {
       // Extract termsAccepted flag (defaults to false if missing)
-      const { token, termsAccepted } = req.body; 
-      
+      const { token, termsAccepted } = req.body;
+
       if (!token) throw new Error("Google token is required");
 
       const result = await AuthService.loginWithGoogle(token, !!termsAccepted);
 
+      // 🟢 The Fix: Set the Refresh Token in an HttpOnly Cookie
+      if (result.refreshToken) {
+        res.cookie("refreshToken", result.refreshToken, {
+          httpOnly: true,
+          secure: process.env.NODE_ENV === "production",
+          sameSite: process.env.NODE_ENV === "production" ? "none" : "lax", 
+          maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days in milliseconds
+        });
+      }
+
       return res.status(200).json({
         message: "Google login successful",
-        token: result.token, 
+        token: result.accessToken, // Using accessToken from the service
         user: result.user,
+        refreshToken: result.refreshToken,
       });
-
     } catch (err: any) {
       // 404 for "User not found" prompts the frontend to redirect to signup
       const status = err.message.includes("Sign Up") ? 404 : 400;
@@ -64,6 +92,7 @@ export class AuthController {
     }
   }
 
+  
   // ------------------ GET ME ------------------
   static async getMe(req: Request, res: Response) {
     try {
@@ -81,40 +110,45 @@ export class AuthController {
     }
   }
 
+// src/auth/auth.controller.ts
+
   static async updateProfile(req: Request, res: Response) {
     try {
-      if (!req.user) throw new Error("Unauthorized");
-      
-      const { name, phone, address, latitude, longitude } = req.body;
-      
-      const updatedUser = await AuthService.updateProfile(req.user.id, {
-        name,
-        phone,
-        address,
-        latitude: latitude ? parseFloat(latitude) : undefined,
-        longitude: longitude ? parseFloat(longitude) : undefined,
+      const userId = req.user?.id;
+      if (!userId) return res.status(401).json({ success: false, message: "Unauthorized" });
+
+      // Extract pushToken from body
+      const { name, phone, address, latitude, longitude, pushToken } = req.body; 
+
+      const updatedUser = await AuthService.updateProfile(userId, { 
+        name, 
+        phone, 
+        address, 
+        latitude, 
+        longitude,
+        pushToken // <--- Pass it to service
       });
 
-      return res.status(200).json({
-        success: true,
-        message: "Profile updated successfully",
-        user: updatedUser
-      });
+      return res.status(200).json({ success: true, message: "Profile updated", data: updatedUser });
     } catch (err: any) {
-      return res.status(400).json({ error: err.message });
+      return res.status(400).json({ success: false, message: err.message });
     }
   }
 
+  
   // ------------------ VERIFY OTP ------------------
   static async verifyOtp(req: Request, res: Response) {
     try {
-      const { token, code } = req.body;
-      const result = await AuthService.verifyOtp(token, code);
+      const { email, code } = req.body;
+      if (!email || !code) {
+        throw new Error("Email and OTP code are required");
+      }
+      const result = await AuthService.verifyOtp(email, code);
 
       return res.status(200).json({
+        success: true,
         message: "Account verified successfully",
-        token: result.token,
-        user: result.user
+        data: result,
       });
     } catch (err: any) {
       return res.status(400).json({ error: err.message });
@@ -122,33 +156,56 @@ export class AuthController {
   }
 
   // ------------------ LOGOUT ------------------
+  // ------------------ LOGOUT ------------------
   static async logout(req: Request, res: Response) {
-    return res.status(200).json({ message: "Logged out successfully" });
+    try {
+      // Clear the HttpOnly cookie for the Next.js Web App
+      res.clearCookie("refreshToken", {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+      });
+
+      return res.status(200).json({ message: "Logout successful" });
+    } catch (error: any) {
+      return res.status(500).json({ error: "Failed to log out" });
+    }
   }
 
   // ... (Password reset & Push token methods)
   static async forgotPassword(req: Request, res: Response) {
-      try {
-        const { email } = req.body;
-        if (!email) throw new Error("Email is required");
-        const result = await AuthService.forgotPassword(email);
-        return res.status(200).json({ message: "OTP sent to email", token: result.token });
-      } catch (err: any) { return res.status(400).json({ error: err.message }); }
+    try {
+      const { email } = req.body;
+      if (!email) throw new Error("Email is required");
+      const result = await AuthService.forgotPassword(email);
+      return res
+        .status(200)
+        .json({ message: "OTP sent to email", token: result.token });
+    } catch (err: any) {
+      return res.status(400).json({ error: err.message });
+    }
   }
   static async verifyResetOtp(req: Request, res: Response) {
-      try {
-        const { token, code } = req.body;
-        const result = await AuthService.verifyForgotPasswordOtp(token, code);
-        return res.status(200).json(result);
-      } catch (err: any) { return res.status(400).json({ error: err.message }); }
+    try {
+      const { token, code } = req.body;
+      const result = await AuthService.verifyForgotPasswordOtp(token, code);
+      return res.status(200).json(result);
+    } catch (err: any) {
+      return res.status(400).json({ error: err.message });
+    }
   }
   static async resetPassword(req: Request, res: Response) {
-      try {
-        const { token, newPassword, confirmPassword } = req.body;
-        if (newPassword !== confirmPassword) throw new Error("Passwords do not match");
-        const result = await AuthService.resetPassword(token, newPassword);
-        return res.status(200).json({ message: "Password reset successful", result });
-      } catch (err: any) { return res.status(400).json({ error: err.message }); }
+    try {
+      const { token, newPassword, confirmPassword } = req.body;
+      if (newPassword !== confirmPassword)
+        throw new Error("Passwords do not match");
+      const result = await AuthService.resetPassword(token, newPassword);
+      return res
+        .status(200)
+        .json({ message: "Password reset successful", result });
+    } catch (err: any) {
+      return res.status(400).json({ error: err.message });
+    }
   }
 
   static async updatePushToken(req: Request, res: Response) {
@@ -157,24 +214,46 @@ export class AuthController {
       if (!req.user) throw new Error("Unauthorized");
       await AuthService.updatePushToken(req.user.id, token);
       return res.json({ success: true });
-    } catch (err: any) { return res.status(500).json({ error: "Failed to update token" }); }
+    } catch (err: any) {
+      return res.status(500).json({ error: "Failed to update token" });
+    }
   }
 
-  //WEB PUSH  NOTIFICATION
-  static subscribeWebPush = async (req: Request, res: Response, next: NextFunction) => {
+  // ------------------ REFRESH ENDPOINT ------------------
+  static async refreshToken(req: Request, res: Response) {
     try {
-      const { subscription } = req.body;
-      const userId = req.user?.id; 
+      // 1. Extract the token
+      const refreshToken = req.cookies?.refreshToken || req.body?.refreshToken;
+      
+      // Log the presence (not the value) of the token for debugging
+      console.log(`[Refresh] Token received from ${req.cookies.refreshToken ? 'cookie' : 'body'}:`, !!refreshToken);
 
-      if (!userId) {
-        return res.status(401).json({ message: "Unauthorized" });
+      if (!refreshToken) {
+        console.warn("[Refresh] Rejecting: No refresh token provided.");
+        return res.status(401).json({ error: "Refresh token missing" });
       }
 
-      await AuthService.subscribeWebPush(userId, subscription);
+      // 2. Attempt the refresh
+      const accessToken = await AuthService.refreshAccessToken(refreshToken);
 
-      res.status(200).json({ message: "Web push subscribed successfully" });
-    } catch (error) {
-      next(error);
+      console.log("[Refresh] ✅ Success: New access token generated.");
+      return res.status(200).json({ accessToken });
+      
+    } catch (error: any) {
+      // 🟢 THE CRITICAL LOG: This reveals the "Why" behind the 403
+      console.error("[Refresh] ❌ Failed:", error.message);
+
+      // Clear the cookie if it was a browser-based request
+      res.clearCookie("refreshToken", {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+      });
+      
+      return res.status(403).json({ 
+        error: error.message || "Session expired. Please log in again." 
+      });
     }
-  };
+  }
+  
 }

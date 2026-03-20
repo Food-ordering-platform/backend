@@ -1,28 +1,26 @@
 import { Router } from "express";
+import { AdminController } from "./admin.controller";
 import { authMiddleware } from "../auth/auth.middleware";
-import { AdminService } from "./admin.service";
+import { roleMiddleware } from "../auth/auth.middleware";
 
 const router = Router();
+router.post("/login", AdminController.login);
+//  RBAC IN ACTION:
+// We array both middlewares. First it checks if they are logged in, 
+// then it strictly verifies their database role is "ADMIN".
+const adminAuth = [authMiddleware, roleMiddleware(["ADMIN"])];
 
-// Middleware to check if user is ADMIN
-const adminCheck = (req: any, res: any, next: any) => {
-  if (req.user.role !== "ADMIN") return res.status(403).json({ message: "Admin only" });
-  next();
-};
+// --- Analytics ---
+router.get("/analytics", adminAuth, AdminController.getAnalytics);
+router.get("/analytics/chart", adminAuth, AdminController.getChartAnalytics);
 
-router.get("/withdrawals", authMiddleware, adminCheck, async (req, res) => {
-  try {
-    const withdrawals = await AdminService.getPendingWithdrawals();
-    res.json({ success: true, data: withdrawals });
-  } catch (e: any) { res.status(500).json({ error: e.message }); }
-});
+// --- User Management ---
+router.get("/users", adminAuth, AdminController.getUsers);
+router.patch("/users/:id/approve", adminAuth, AdminController.approveUser);
+router.delete("/users/:id", adminAuth, AdminController.deleteUser);
 
-router.post("/withdrawals/:id", authMiddleware, adminCheck, async (req, res) => {
-  try {
-    const { action } = req.body; // "APPROVE" or "REJECT"
-    const result = await AdminService.processWithdrawal(req.params.id, action);
-    res.json({ success: true, data: result });
-  } catch (e: any) { res.status(400).json({ error: e.message }); }
-});
+// --- Payouts ---
+router.get("/payouts", adminAuth, AdminController.getPayouts);
+router.patch("/payouts/:id/pay", adminAuth, AdminController.markPayoutPaid);
 
 export default router;

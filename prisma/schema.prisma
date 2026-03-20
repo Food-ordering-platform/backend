@@ -1,5 +1,3 @@
-// This is your Prisma schema file
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -9,216 +7,185 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// ================= USER & AUTH =================
-
 model User {
-  id          String       @id @default(uuid())
-  name        String
-  email       String       @unique
-  password    String?       //Made it optional to alloow google auth users
-  phone       String?       //Made it optional to alloow google auth users
-  address     String?      
-  role        Role         @default(CUSTOMER)
-  
-  restaurant  Restaurant?  @relation("RestaurantOwner") 
-  orders      Order[]      @relation("CustomerOrders")
-  otp         Otp[]
-
-  googleId    String?      @unique // [Add] To link Google accounts reliably
-  avatar      String?      //Good for professional profile feel
-  pushToken   String?
-
-  latitude    Float?
-  longitude   Float?
-
-
-// [NEW] Link user to a Logistics Company
-  logisticsPartner LogisticsPartner? @relation("LogisticsOwner")
-  // [NEW] The orders this user (Rider) has delivered
-  deliveries   Order[]  @relation("RiderOrders")
-
-  transactions Transaction[]
-
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
-  isVerified  Boolean      @default(false)
-
+  id              String        @id @default(uuid())
+  name            String
+  email           String        @unique
+  password        String?
+  address         String?
+  phone           String?
+  role            Role          @default(CUSTOMER)
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  isVerified      Boolean       @default(false)
+  avatar          String?
+  googleId        String?       @unique
+  pushToken       String?
+  latitude        Float?
+  longitude       Float?
   termsAcceptedAt DateTime?
+  isOnline        Boolean       @default(false)
+  isEmailVerified Boolean       @default(false)
+  orders          Order[]       @relation("CustomerOrders")
+  deliveries      Order[]       @relation("RiderOrders")
+  otp             Otp[]
+  restaurant      Restaurant?   @relation("RestaurantOwner")
+  transactions    Transaction[]
 
-  webPushSubscriptions WebPushSubscription[]
-
-  reviews              Review[]
+  @@index([role])
+  @@index([isOnline])
+  @@index([phone])
 }
 
 model Otp {
   id        String   @id @default(cuid())
   code      String
   userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   createdAt DateTime @default(now())
   expiresAt DateTime
   used      Boolean  @default(false)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, code])
+  @@index([expiresAt])
 }
-
-// ================= SESSIONS (System) =================
-
-model Session {
-  sid    String   @id
-  sess   Json
-  expire DateTime
-
-  @@map("session")  // Important: Rename table to lowercase "session" for the library
-  @@index([expire]) // Adds performance index for clearing expired sessions
-}
-
-// ================= RESTAURANT MANAGEMENT =================
 
 model Restaurant {
-  id           String        @id @default(uuid())
+  id           String         @id @default(uuid())
   name         String
-  email        String        @unique 
   address      String
   phone        String
-  imageUrl     String?       
-  
-  owner        User          @relation("RestaurantOwner", fields: [ownerId], references: [id])
-  ownerId      String        @unique 
-
+  ownerId      String         @unique
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+  imageUrl     String?
+  isOpen       Boolean        @default(false)
+  minimumOrder Float          @default(0.0)
+  email        String         @unique
+  prepTime     Int            @default(20)
+  latitude     Float?
+  longitude    Float?
+  rating       Float          @default(0.0)
+  ratingCount  Int            @default(0)
+  slug         String?        @unique
   categories   MenuCategory[]
   menuItems    MenuItem[]
   orders       Order[]
-  
-  // --- SETTINGS ---
-  isOpen       Boolean       @default(false)
-  
-  // Vendor sets only Prep Time.
-  // Delivery Fee is removed because it's now calculated based on distance.
-  prepTime     Int           @default(20) 
-  minimumOrder Float         @default(0.0) // Can keep this if vendors want to enforce minimums
+  owner        User           @relation("RestaurantOwner", fields: [ownerId], references: [id])
 
-  latitude     Float?        
-  longitude    Float?
-
-  createdAt    DateTime      @default(now())
-  updatedAt    DateTime      @updatedAt
-
-  // 🟢 ADD THIS RELATION
-  reviews      Review[]
-  rating       Float     @default(0.0) // Average rating
-  ratingCount  Int       @default(0)
+  @@index([isOpen])
+  @@index([rating])
 }
 
 model MenuCategory {
-  id           String      @id @default(uuid())
+  id           String     @id @default(uuid())
   name         String
-  restaurant   Restaurant  @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
   restaurantId String
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  restaurant   Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
   menuItems    MenuItem[]
-  
-  createdAt    DateTime    @default(now())
-  updatedAt    DateTime    @updatedAt
+
+  @@index([restaurantId])
 }
 
 model MenuItem {
   id           String       @id @default(uuid())
   name         String
-  description  String?
   price        Float
-  imageUrl     String?
   available    Boolean      @default(true)
-  
-  restaurant   Restaurant   @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
   restaurantId String
-  
-  category     MenuCategory @relation(fields: [categoryId], references: [id])
-  categoryId   String
-
   createdAt    DateTime     @default(now())
   updatedAt    DateTime     @updatedAt
-  deletedAt    DateTime?    
+  imageUrl     String?
+  categoryId   String
+  deletedAt    DateTime?
+  category     MenuCategory @relation(fields: [categoryId], references: [id])
+  restaurant   Restaurant   @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
 
   @@index([restaurantId])
+  @@index([categoryId])
+  @@index([available, deletedAt])
 }
 
-// ================= ORDERING & LOGISTICS =================
-
 model Order {
-  id              String        @id @default(uuid())
-  
-  customer        User          @relation("CustomerOrders", fields: [customerId], references: [id])
-  customerId      String
-  
-  restaurant      Restaurant    @relation(fields: [restaurantId], references: [id])
-  restaurantId    String
-
-  items           OrderItem[]
-
-  // --- Financial Snapshot ---
-  totalAmount     Float         
-  deliveryFee     Float         // Still kept here to snapshot what YOU charged the user
-  
-  status          OrderStatus   @default(PENDING)
-  paymentStatus   PaymentStatus @default(PENDING)
-  
-  deliveryAddress String
-  deliveryNotes   String?       
-
-  deliveryLatitude  Float?
-  deliveryLongitude Float?
-
-  idempotencyKey  String?       @unique
-  checkoutUrl     String?       // Store payment link to return on retry
-
-  reference       String        @unique 
-  token           String?       @unique 
-
-  // [NEW] Who is delivering this?
-  riderId      String?
-  rider        User?    @relation("RiderOrders", fields: [riderId], references: [id])
-
-  riderName     String?
-  riderPhone    String?
-
-  // === NEW FIELDS FOR LOGISTICS ===
-  trackingId        String?  @unique // The "Rider Link" ID (e.g. "task-abc-123")
-  deliveryCode      String?  // The OTP the customer gives the rider (e.g. "4590")
-  
-  logisticsPartner   LogisticsPartner? @relation(fields: [logisticsPartnerId], references: [id])
-  logisticsPartnerId String?
-
-  transactions Transaction[]
-
-  createdAt       DateTime      @default(now())
-  updatedAt       DateTime      @updatedAt
+  id                  String        @id @default(uuid())
+  customerId          String
+  restaurantId        String
+  totalAmount         Float
+  status              OrderStatus   @default(PENDING)
+  paymentStatus       PaymentStatus @default(PENDING)
+  deliveryAddress     String
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
+  reference           String        @unique
+  deliveryFee         Float
+  deliveryNotes       String?
+  token               String?       @unique
+  deliveryLatitude    Float?
+  deliveryLongitude   Float?
+  checkoutUrl         String?
+  idempotencyKey      String?       @unique
+  riderId             String?
+  deliveryCode        String?
+  riderName           String?
+  riderPhone          String?
+  deliveryPhoneNumber String
+  customer            User          @relation("CustomerOrders", fields: [customerId], references: [id])
+  restaurant          Restaurant    @relation(fields: [restaurantId], references: [id])
+  rider               User?         @relation("RiderOrders", fields: [riderId], references: [id])
+  items               OrderItem[]
+  transactions        Transaction[]
 
   @@index([restaurantId])
   @@index([customerId])
   @@index([status])
   @@index([paymentStatus])
+  @@index([riderId])
+  @@index([createdAt])
 }
 
 model OrderItem {
-  id        String   @id @default(uuid())
-  
-  order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  orderId   String
+  id           String  @id @default(uuid())
+  orderId      String
+  menuItemId   String?
+  quantity     Int
+  price        Float
+  menuItemName String
+  order        Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
 
-  menuItemName String  
-  menuItemId   String? 
-  
-  quantity  Int
-  price     Float    
+  @@index([orderId])
 }
 
-// ================= ENUMS =================
+model Transaction {
+  id          String              @id @default(uuid())
+  userId      String
+  amount      Float
+  type        TransactionType
+  category    TransactionCategory
+  status      TransactionStatus   @default(PENDING)
+  orderId     String?
+  description String?
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+  reference   String?             @unique
+  order       Order?              @relation(fields: [orderId], references: [id])
+  user        User                @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([orderId])
+  @@index([status, type])
+  @@index([createdAt])
+}
 
 enum OrderStatus {
   PENDING
   PREPARING
-  READY_FOR_PICKUP   // <--- ADD THIS LINE
-  OUT_FOR_DELIVERY 
+  OUT_FOR_DELIVERY
   DELIVERED
   CANCELLED
+  READY_FOR_PICKUP
+  RIDER_ACCEPTED
 }
 
 enum PaymentStatus {
@@ -232,35 +199,12 @@ enum Role {
   CUSTOMER
   VENDOR
   ADMIN
-  RIDER 
-  DISPATCHER // [NEW] This is for your logistics partner's manager
-}
-
-model Transaction {
-  id          String              @id @default(uuid())
-  userId      String              // The User (Vendor, Rider, or Admin) receiving/losing money
-  user        User                @relation(fields: [userId], references: [id])
-  
-  amount      Float               // Positive (+) for Earnings, Negative (-) for Withdrawals
-  
-  type        TransactionType     // CREDIT or DEBIT
-  category    TransactionCategory // ORDER_EARNING, WITHDRAWAL, REFUND, PLATFORM_FEE
-  status      TransactionStatus   @default(PENDING)
-  
-  orderId     String?             // Link to the Order (if applicable)
-  order       Order?              @relation(fields: [orderId], references: [id])
-  
-  description String?             // e.g. "Earnings from Order #1234"
-
-  reference   String?             @unique
-  
-  createdAt   DateTime            @default(now())
-  updatedAt   DateTime            @updatedAt
+  RIDER
 }
 
 enum TransactionType {
-  CREDIT  // Money coming in
-  DEBIT   // Money going out
+  CREDIT
+  DEBIT
 }
 
 enum TransactionCategory {
@@ -275,57 +219,4 @@ enum TransactionStatus {
   PENDING
   SUCCESS
   FAILED
-}
-
-model LogisticsPartner {
-  id            String   @id @default(uuid())
-  name          String
-  
-  // [NEW] Contact Details for the Business
-  email         String   @unique 
-  phone         String
-  address       String
-
-  // [NEW] Linked to a User Account (The Manager/Dispatcher)
-  owner         User     @relation("LogisticsOwner", fields: [ownerId], references: [id])
-  ownerId       String   @unique
-
-  // [REMOVED] secretKey String @unique
-
-  walletBalance Float    @default(0.0)
-  orders        Order[]
-
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-}
-
-
-// Add this model to your schema.prisma
-model WebPushSubscription {
-  id        String   @id @default(cuid())
-  userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  endpoint  String   @unique
-  p256dh    String
-  auth      String
-  createdAt DateTime @default(now())
-
-  @@index([userId])
-}
-
-// 🟢 ADD THIS NEW MODEL (For Ratings)
-model Review {
-  id           String     @id @default(uuid())
-  rating       Int        // 1-5 Stars
-  comment      String?
-  
-  userId       String
-  user         User       @relation(fields: [userId], references: [id])
-  
-  restaurantId String
-  restaurant   Restaurant @relation(fields: [restaurantId], references: [id])
-  
-  orderId      String     @unique // One review per order
-  
-  createdAt    DateTime   @default(now())
 }

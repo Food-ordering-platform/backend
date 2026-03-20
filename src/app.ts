@@ -5,16 +5,31 @@ import session from "express-session";
 import pgSession from "connect-pg-simple";
 import { Pool } from "pg";
 import compression from "compression"
+import { setupSwagger } from './swagger';
+import * as Sentry from "@sentry/node"; // Sentry import
+import { nodeProfilingIntegration } from "@sentry/profiling-node";
+import cookieParser from 'cookie-parser';// import { globalLimiter } from "./config/rate-limit";
 
 import authRouter from "./auth/auth.route";
 import restaurantRouter from "./restuarant/restaurant.route";
-import orderRouter from "./order/order.routes";
+import orderRouter from "./order/order.route";
 import paymentRouter from "./payment/payment.route";
-import dispatchRouter from "./dispatch/dispatch.route"
 import adminRouter from "./admin/admin.route";
-import notificationRouter from "./notifications/notification.route"
+import riderRoute from "./rider/rider.route";
+import vendorRoutes from "./vendor/vendor.route"
 
 const app = express();
+
+
+// 1. Initialize Sentry early
+Sentry.init({
+  dsn: process.env.SENTRY_DSN,
+  integrations: [
+    nodeProfilingIntegration(),
+  ],
+  tracesSampleRate: 1.0,
+  profilesSampleRate: 1.0,
+});
 
 
 app.set("trust proxy", 1) //Tells express to trust the load balancer
@@ -31,7 +46,7 @@ app.use(compression())
 
 app.use(
   cors({
-    origin: ["http://localhost:3000", "https://choweazy.vercel.app", "http://localhost:8081", "https://choweazy-vendor.vercel.app", "https://choweazy-rider.vercel.app"],
+    origin: ["http://localhost:3000", "https://choweazy.com", "https://staging.choweazy.com", "http://localhost:8081", "https://admin.staging.choweazy.com"],
     methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
     preflightContinue: false,
@@ -40,27 +55,35 @@ app.use(
   })
 );
 app.use(morgan("dev"));
+setupSwagger(app)
 
 // 3. JSON Parsing (Skip for Webhooks)
-app.use((req, res, next) => {
-  if (req.path.startsWith("/api/payment/webhook")) {
-    next();
-  } else {
-    express.json()(req, res, next);
+app.use(express.json({
+  verify: (req: any, res, buf) => {
+    // This captures the raw buffer specifically for the webhook signature verification
+    if (req.url.startsWith('/api/payment/webhook')) {
+      req.rawBody = buf;
+    }
   }
-});
-
+}));
 app.use(express.urlencoded({ extended: true }));
 
+app.use(cookieParser());
+
+// app.use("/api", globalLimiter);
 
 // 5. Routes
 app.use("/api/auth", authRouter);
 app.use("/api/restaurant", restaurantRouter);
 app.use("/api/orders", orderRouter);
 app.use("/api/payment", paymentRouter);
-app.use("/api/dispatch", dispatchRouter)
-app.use("/api/admin", adminRouter);
-app.use("/api/notifications", notificationRouter);
+app.use("/api/rider", riderRoute);
+app.use("/api/vendor", vendorRoutes)
+app.use("/api/admin", adminRouter)
+
+// 6. SENTRY ERROR HANDLER (New v8 Syntax)
+// Must be placed after all controllers/routes and before your custom error handler
+Sentry.setupExpressErrorHandler(app);
 
 // 6. Global Error Handler
 app.use(

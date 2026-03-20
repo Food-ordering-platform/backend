@@ -35,6 +35,7 @@ export class OrderController {
         customerId, 
         restaurantId, 
         deliveryAddress, 
+        deliveryPhoneNumber,
         deliveryNotes, 
         deliveryLatitude,
         deliveryLongitude,
@@ -55,6 +56,7 @@ export class OrderController {
         customerId,
         restaurantId,
         deliveryAddress,
+        deliveryPhoneNumber,
         deliveryNotes, 
         deliveryLatitude,
         deliveryLongitude,
@@ -115,52 +117,41 @@ export class OrderController {
     }
   }
 
-  static async getVendorOrders(req: Request, res: Response) {
-    try {
-      const { restaurantId } = req.params;
-      if (!restaurantId) {
-        return res.status(400).json({ success: false, message: "Restaurant ID is required" });
-      }
-      const orders = await OrderService.getVendorOrders(restaurantId);
-      return res.status(200).json({ success: true, data: orders });
-    }
-    catch (err: any) {
-      console.error("Get Vendor orders error", err);
-      return res.status(500).json({ success: false, message: err.message || "Server Error" });
-    }
-  }
+  // static async getVendorOrders(req: Request, res: Response) {
+  //   try {
+  //     const { restaurantId } = req.params;
+  //     if (!restaurantId) {
+  //       return res.status(400).json({ success: false, message: "Restaurant ID is required" });
+  //     }
+  //     const orders = await OrderService.getVendorOrders(restaurantId);
+  //     return res.status(200).json({ success: true, data: orders });
+  //   }
+  //   catch (err: any) {
+  //     console.error("Get Vendor orders error", err);
+  //     return res.status(500).json({ success: false, message: err.message || "Server Error" });
+  //   }
+  // }
 
  
 
-  static async updateOrderStatus(req: Request, res: Response) {
-    try {
-      const { id } = req.params; 
-      const { status } = req.body;
-      if (!id || !status) {
-        return res.status(400).json({ success: false, Message: "OrderID and status is required" });
-      }
-      const updateOrder = await OrderService.updateOrderStatus(id, status);
-      return res.status(200).json({ success: true, data: updateOrder });
-    }
-    catch (err: any) {
-      console.error("Update order status error", err);
-      const statusCode = err.message.includes("Invalid State Transition") ? 400 : 500;
-      return res.status(statusCode).json({ success: false, message: err.message || "Server Error" });
-    }
-  }
+  // static async updateOrderStatus(req: Request, res: Response) {
+  //   try {
+  //     const { id } = req.params; 
+  //     const { status } = req.body;
+  //     if (!id || !status) {
+  //       return res.status(400).json({ success: false, Message: "OrderID and status is required" });
+  //     }
+  //     const updateOrder = await OrderService.updateOrderStatus(id, status);
+  //     return res.status(200).json({ success: true, data: updateOrder });
+  //   }
+  //   catch (err: any) {
+  //     console.error("Update order status error", err);
+  //     const statusCode = err.message.includes("Invalid State Transition") ? 400 : 500;
+  //     return res.status(statusCode).json({ success: false, message: err.message || "Server Error" });
+  //   }
+  // }
+
 
   // Add inside OrderController class
-static async rateOrder(req: Request, res: Response) {
-  try {
-    const { id } = req.params; // Order ID
-    const { rating, comment } = req.body;
-    
-    if (!req.user) throw new Error("Unauthorized");    
-    const review = await RestaurantService.addReview(req.user.id, id, rating, comment);
-    
-    return res.status(200).json({ success: true, data: review });
-  } catch (err: any) {
-    return res.status(400).json({ success: false, message: err.message });
-  }
-}
+
 }

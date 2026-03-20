@@ -1,24 +1,24 @@
 // food-ordering-platform/backend/backend-main/src/auth/auth.service.ts
 
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient, } from "@prisma/client";
 import bcrypt from "bcryptjs";
-import {OAuth2Client} from "google-auth-library"
+import { OAuth2Client } from "google-auth-library"
 import { randomInt } from "crypto";
 import jwt from "jsonwebtoken";
 import dayjs from "dayjs";
-import { sendLoginAlertEmail, sendOtPEmail } from "../utils/mailer";
+import { sendLoginAlertEmail, sendOtPEmail, sendRiderVerificationPendingEmail } from "../utils/email/email.service";
 
 const prisma = new PrismaClient();
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID)
 
 export class AuthService {
   // ------------------ REGISTER ------------------
- static async registerUser(
+  static async registerUser(
     name: string,
     email: string,
     password: string,
-    phone: string, 
-    role: "CUSTOMER" | "VENDOR" | "DISPATCHER" | "RIDER"  = "CUSTOMER",
+    phone: string,
+    role: "CUSTOMER" | "VENDOR" | "RIDER" = "CUSTOMER",
     termsAcceptedAt: Date,
     address?: string
   ) {
@@ -26,29 +26,24 @@ export class AuthService {
     const existingUser = await prisma.user.findUnique({ where: { email } });
 
     if (existingUser) {
-      if (!existingUser.isVerified) {
+      if (!existingUser.isEmailVerified) {
         // If unverified, update details and resend OTP
         const updatedUser = await prisma.user.update({
           where: { id: existingUser.id },
           data: {
-            termsAcceptedAt: termsAcceptedAt, 
+            termsAcceptedAt: termsAcceptedAt,
             name: name,
-            phone: phone, 
+            phone: phone,
             address: address,
-            role: role // Update role in case they changed it
+            role: role, // Update role in case they changed it
+            isOnline: role === "RIDER" ? false : false
           }
         });
-        
+
         const code = await this.generateOtp(updatedUser.id);
         await sendOtPEmail(updatedUser.email, code);
 
-        const token = jwt.sign(
-          { userId: updatedUser.id, role: updatedUser.role },
-          process.env.JWT_SECRET as string,
-          { expiresIn: "30m" } 
-        );
-
-        return { user: updatedUser, token };
+        return { user: updatedUser };
       }
       throw new Error("This email is already registered. Please login.");
     }
@@ -56,88 +51,85 @@ export class AuthService {
     const hashedPassword = await bcrypt.hash(password, 10);
 
     const result = await prisma.$transaction(async (tx) => {
-        const user = await tx.user.create({
-          data: {
-            name,
-            email,
-            password: hashedPassword,
-            phone,
-            role,
-            isVerified: false,
-            termsAcceptedAt: termsAcceptedAt,
-            address
-          },
-        });
+      const user = await tx.user.create({
+        data: {
+          name,
+          email,
+          password: hashedPassword,
+          phone,
+          role,
+          isEmailVerified: false,
+          isVerified: false,
+          // Rider starts offline; admin approval + toggle controls availability
+          isOnline: role === "RIDER" ? false : false,
+          termsAcceptedAt: termsAcceptedAt,
+          address
+        },
+      });
 
-        if (role === "DISPATCHER") {
-            await tx.logisticsPartner.create({
-                data: {
-                    name: `${name}'s Logistics`,
-                    email: email, 
-                    phone: phone, 
-                    address: address || "Update Your Office Address",
-                    ownerId: user.id
-                }
-            });
-        }
-        return user;
+      return user;
     });
 
     const code = await this.generateOtp(result.id);
 
-    const token = jwt.sign(
-      { userId: result.id, role: result.role },
-      process.env.JWT_SECRET as string,
-      { expiresIn: "30m" } 
-    );
-
     sendOtPEmail(result.email, code).catch(err => console.error("Failed to send OTP email:", err));
-
-    return { user: result, token };
+    if (result.role === "RIDER") {
+      sendRiderVerificationPendingEmail(result.email, result.name)
+        .catch(err => console.error("Failed to send Rider pending email:", err));
+    }
+    return { user: result };
   }
 
   // ------------------ LOGIN ------------------
   static async login(email: string, password: string) {
-    const user = await prisma.user.findUnique({ where: {email}, include:{restaurant: true}});
+    const user = await prisma.user.findUnique({ 
+      where: { email }, 
+      include: { restaurant: true } 
+    });
+    
     if (!user) throw new Error("We couldn't find an account with that email.");
 
     if (!user.password) throw new Error("Invalid credentials. Did you sign up with Google?");
+    
     const isValid = await bcrypt.compare(password, user.password);
     if (!isValid) throw new Error("Incorrect password. Please try again.");
 
-    if (!user.isVerified) {
+    if (!user.isEmailVerified) {
       const code = await this.generateOtp(user.id);
       await sendOtPEmail(user.email, code);
 
+      // Temp token just for the OTP verification screen
       const tempToken = jwt.sign(
         { userId: user.id, role: user.role },
         process.env.JWT_SECRET as string,
-        { expiresIn: "30m" } 
+        { expiresIn: "30m" }
       );
 
-      return { 
+      return {
         requireOtp: true,
-        token: tempToken,
-        user 
+        accessToken: tempToken, // Renamed to accessToken for frontend consistency
+        user
       };
     }
 
-    const token = jwt.sign(
-      { userId: user.id, role: user.role },
-      process.env.JWT_SECRET as string,
-      { expiresIn: "7d" }
-    );
+    // 🟢 THE FIX: Generate the Two-Token System
+    const { accessToken, refreshToken } = this.generateTokens(user);
 
-    sendLoginAlertEmail(user.email, user.name)
-    return { token, user };
+    sendLoginAlertEmail(user.email, user.name);
+    
+    // Return both tokens to the controller
+    return { accessToken, refreshToken, user };
   }
 
+
+
   // ------------------ GOOGLE LOGIN ------------------
-  static async loginWithGoogle(token: string, termsAccepted: boolean) {
+ static async loginWithGoogle(token: string, termsAccepted: boolean) {
     const ticket = await googleClient.verifyIdToken({
       idToken: token,
       audience: process.env.GOOGLE_CLIENT_ID,
     });
+    
     const payload = ticket.getPayload();
 
     if (!payload || !payload.email) {
@@ -150,22 +142,22 @@ export class AuthService {
       where: { email },
     });
 
-    // 🛑 BLOCKER: If user doesn't exist AND they didn't accept terms (via Signup page)
+    // If user doesn't exist AND they didn't accept terms (via Signup page)
     if (!user && !termsAccepted) {
-        throw new Error("Account not found. Please use the Sign Up page to create an account.");
+      throw new Error("Account not found. Please use the Sign Up page to create an account.");
     }
 
     if (!user) {
-      // ✅ CREATE NEW USER (With Terms Date)
+      // CREATE NEW USER 
       user = await prisma.user.create({
         data: {
           email,
           name: name || "Google User",
           googleId,
           avatar: picture,
-          isVerified: true, 
+          isEmailVerified: true,
           role: "CUSTOMER",
-          termsAcceptedAt: new Date(), // <--- SAVING THE DATE
+          termsAcceptedAt: new Date(), 
         },
       });
     } else {
@@ -178,47 +170,51 @@ export class AuthService {
       }
     }
 
-    const jwtToken = jwt.sign(
-      { userId: user.id, role: user.role },
-      process.env.JWT_SECRET as string,
-      { expiresIn: "7d" }
-    );
+    // 🟢 THE FIX: Generate the Two-Token System
+    const { accessToken, refreshToken } = this.generateTokens(user);
 
-    if(user.email) {
-       sendLoginAlertEmail(user.email, user.name)
+    if (user.email) {
+      sendLoginAlertEmail(user.email, user.name);
     }
 
-    return { token: jwtToken, user };
+    // Return both tokens to the controller
+    return { accessToken, refreshToken, user };
   }
+
+
+  
+
 
   static async getMe(userId: string) {
     const user = await prisma.user.findUnique({
-      where:{id:userId},
-      select:{
+      where: { id: userId },
+      select: {
         id: true,
-        name:true,
-        email:true,
-        role:true,
-        isVerified:true,
-        latitude: true,  
+        name: true,
+        email: true,
+        role: true,
+        isVerified: true,
+        latitude: true,
         longitude: true,
         address: true, // Make sure address is returned
-        phone:true,
+        phone: true,
         restaurant: true
       }
     })
-    if (!user){
+    if (!user) {
       throw new Error("User session not found. Please login again.")
     }
     return user;
   }
 
-  static async updateProfile(userId: string, data: { 
-    name?: string; 
-    phone?: string; 
-    address?: string; 
-    latitude?: number; 
-    longitude?: number; 
+
+  static async updateProfile(userId: string, data: {
+    name?: string;
+    phone?: string;
+    address?: string;
+    latitude?: number;
+    longitude?: number;
+    pushToken?: string; // <--- 1. Add Type Here
   }) {
     return await prisma.user.update({
       where: { id: userId },
@@ -228,89 +224,72 @@ export class AuthService {
         address: data.address,
         latitude: data.latitude,
         longitude: data.longitude,
+        pushToken: data.pushToken, // <--- 2. Add Field Here
       },
       select: {
-        id: true, 
-        name: true, 
-        email: true, 
-        phone: true, 
-        address: true, 
-        latitude: true, 
+        id: true,
+        name: true,
+        email: true,
+        phone: true,
+        address: true,
+        latitude: true,
         longitude: true,
         role: true,
-        isVerified: true
+        isVerified: true,
+        pushToken: true // Optional: if you want to see it in the response
       }
     });
   }
 
-  // ------------------ OTP UTILS ------------------
-  static async generateOtp(userId: string) {
-    const code = randomInt(100000, 999999).toString();
-    const expiresAt = dayjs().add(30, "minute").toDate();
 
-    await prisma.otp.create({
-      data: { code, userId, expiresAt },
+  // ------------------ OTP UTILS ------------------
+
+
+  static async verifyOtp(email: string, code: string) {
+    const user = await prisma.user.findUnique({ where: { email } });
+    if (!user) throw new Error("User not found");
+
+    const otpRecord = await prisma.otp.findFirst({
+      where: { userId: user.id, code, used: false, expiresAt: { gt: new Date() } },
+    });
+    if (!otpRecord) throw new Error("Invalid or expired OTP");
+
+    // 
+    // 1. Mark Email as Verified (Allows Login)
+    // 2. Only Auto-Approve CUSTOMERS. Riders remain Pending.
+
+    const updateData: any = {
+      isEmailVerified: true
+    };
+
+    if (user.role === 'CUSTOMER') {
+      updateData.isVerified = true; // Auto-verify customers
+    }
+    // If RIDER, isVerified stays false (Pending Admin)
+
+    const updatedUser = await prisma.user.update({
+      where: { id: user.id },
+      data: updateData,
     });
 
-    return code;
-  }
+    await prisma.otp.update({ where: { id: otpRecord.id }, data: { used: true } });
 
-  static async verifyOtp(token: string, code: string) {
-    try {
-      const payload = jwt.verify(
-        token,
-        process.env.JWT_SECRET as string
-      ) as { userId: string };
-
-      const otp = await prisma.otp.findFirst({
-        where: {
-          userId: payload.userId,
-          code,
-          used: false,
-          expiresAt: { gt: new Date() },
-        },
-      });
- 
-      if (!otp) throw new Error("The code you entered is invalid or has expired.");
-
-      await prisma.otp.update({
-        where: { id: otp.id },
-        data: { used: true },
-      });
-
-      const user = await prisma.user.update({
-        where: { id: payload.userId },
-        data: { isVerified: true },
-      });
-
-      const sessionToken = jwt.sign(
-        { userId: user.id, role: user.role },
-        process.env.JWT_SECRET as string,
-        { expiresIn: "24h" }
-      );
-
-      return {
-        message: "Account Verified Successfully",
-        user: { id: user.id, email: user.email, role: user.role },
-        token: sessionToken, 
-      };
-    } catch (error: any) {
-        if(error.message === "The code you entered is invalid or has expired."){
-            throw error;
-        }
-        throw new Error("Your session has expired. Please login again to get a new code.");
-    }
+    // Return the updated status so frontend knows where to go
+    return {
+      isVerified: updatedUser.isVerified,
+      role: updatedUser.role
+    };
   }
 
   // ------------------ FORGOT PASSWORD ------------------
   static async forgotPassword(email: string) {
     const user = await prisma.user.findUnique({ where: { email } });
     if (!user) {
-      throw new Error("We sent an OTP if this email exists."); 
+      throw new Error("We sent an OTP if this email exists.");
     }
 
     const code = randomInt(100000, 999999).toString();
-    const expiresAt = dayjs().add(30, "minute").toDate(); 
+    const expiresAt = dayjs().add(30, "minute").toDate();
 
     await prisma.otp.create({
       data: { code, userId: user.id, expiresAt },
@@ -321,12 +300,12 @@ export class AuthService {
     const token = jwt.sign(
       { userId: user.id, purpose: "RESET_PASSWORD" },
       process.env.JWT_SECRET as string,
-      { expiresIn: "24h" } 
+      { expiresIn: "24h" }
     );
 
     return { message: "OTP sent to email", token };
   }
-  
+
   static async verifyForgotPasswordOtp(token: string, code: string) {
     try {
       const payload = jwt.verify(token, process.env.JWT_SECRET as string) as { userId: string; purpose: string };
@@ -378,24 +357,57 @@ export class AuthService {
     });
   }
 
-  static async subscribeWebPush(userId: string, subscription: any) {
-    if (!subscription || !subscription.endpoint || !subscription.keys) {
-      throw new Error("Invalid subscription data");
-    }
+    static async generateOtp(userId: string) {
+    const code = randomInt(100000, 999999).toString();
+    const expiresAt = dayjs().add(30, "minute").toDate();
 
-    return await prisma.webPushSubscription.upsert({
-      where: { endpoint: subscription.endpoint },
-      update: {
-        userId,
-        p256dh: subscription.keys.p256dh,
-        auth: subscription.keys.auth,
-      },
-      create: {
-        userId,
-        endpoint: subscription.endpoint,
-        p256dh: subscription.keys.p256dh,
-        auth: subscription.keys.auth,
-      },
+    await prisma.otp.create({
+      data: { code, userId, expiresAt },
     });
+
+    return code;
+  }
+
+  static generateTokens(user: { id: string; role: string }) {
+    const accessToken = jwt.sign(
+      { userId: user.id, role: user.role },
+      process.env.JWT_SECRET as string,
+      { expiresIn: "15m" } // Short-lived Access Token
+    );
+
+    const refreshToken = jwt.sign(
+      { userId: user.id },
+      process.env.JWT_REFRESH_SECRET as string, // Make sure you add this to .env!
+      { expiresIn: "30d" } // Long-lived Refresh Token
+    );
+
+    return { accessToken, refreshToken };
+  }
+
+
+  // ------------------ REFRESH TOKEN ------------------
+  static async refreshAccessToken(refreshToken: string) {
+    try {
+      // 1. Verify the token signature
+      const decoded = jwt.verify(
+        refreshToken, 
+        process.env.JWT_REFRESH_SECRET as string
+      ) as { userId: string };
+
+      // 2. Ensure the user still exists (and hasn't been deleted)
+      const user = await prisma.user.findUnique({ 
+        where: { id: decoded.userId } 
+      });
+      
+      if (!user) throw new Error("User not found");
+
+      // 3. Generate a brand new 15-minute Access Token
+        const { accessToken } = this.generateTokens({ id: user.id, role: user.role });
+
+      return accessToken;
+    } catch (error) {
+      // If the token is expired or tampered with, it throws here
+      throw new Error("Invalid or expired refresh token.");
+    }
   }
 }

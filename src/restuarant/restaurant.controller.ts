@@ -1,7 +1,6 @@
 import { Request, Response } from "express";
 import { RestaurantService } from "./restaurant.service";
 import jwt from "jsonwebtoken";
-import { success } from "zod";
 
 export class RestaurantController {
   private static parseRestaurantBody(body: any) {
@@ -10,56 +9,53 @@ export class RestaurantController {
       address: body.address,
       phone: body.phone,
       email: body.email,
-      // Parse numbers safely
       prepTime: body.prepTime ? parseInt(body.prepTime, 10) : undefined,
-      latitude:body.latitude ? parseFloat(body.latitude) :  undefined,
-      longitude:body.longitude ? parseFloat(body.longitude) : undefined,
-      minimumOrder: body.minimumOrder
-        ? parseFloat(body.minimumOrder)
-        : undefined,
-      // Parse booleans from "true"/"false" strings
+      latitude: body.latitude ? parseFloat(body.latitude) : undefined,
+      longitude: body.longitude ? parseFloat(body.longitude) : undefined,
+      minimumOrder: body.minimumOrder ? parseFloat(body.minimumOrder) : undefined,
       isOpen:
         body.isOpen !== undefined
           ? body.isOpen === "true" || body.isOpen === true
           : undefined,
     };
   }
-  // Create Restaurant
-  // POST /restaurant
-  static async createRestaurant(req: Request, res: Response) {
-    try {
-      const authHeader = req.headers.authorization;
-      if (!authHeader) throw new Error("No token Provided");
-      const token = authHeader.split(" ")[1];
-      const decoded: any = jwt.verify(token, process.env.JWT_SECRET as string);
 
-      const ownerId = decoded.userId;
+  // ===== Restaurant Profile Management =====
+  
+static async createRestaurant(req: Request, res: Response) {
+  try {
+    // 🟢 Middleware already verified the token! 
+    // It usually attaches the data to req.user
+    const ownerId = req.user?.id; 
 
-      // 1. Clean Parse using helper
-      const restaurantData = RestaurantController.parseRestaurantBody(req.body);
-
-      // 2. Pass Data AND File to Service (Ticketer Strategy)
-      // We do not rely on middleware to populate 'path' here; the service will handle upload
-      const restaurant = await RestaurantService.createRestaurant(
-        ownerId,
-        restaurantData,
-        req.file // Pass the raw file object
-      );
-
-      res.status(201).json({
-        success: true,
-        message: "Restaurant Profile Created Successfully",
-        data: restaurant,
-      });
-    } catch (err: any) {
-      console.error("Error Creating Restaurant:", err);
-      res.status(400).json({
-        success: false,
-        message: err.message || "Failed to create restaurant",
-      });
+    if (!ownerId) {
+      return res.status(401).json({ success: false, message: "Unauthorized" });
     }
+
+    // Process the body
+    const restaurantData = RestaurantController.parseRestaurantBody(req.body);
+
+    // Call the service
+    const restaurant = await RestaurantService.createRestaurant(
+      ownerId,
+      restaurantData,
+      req.file 
+    );
+
+    res.status(201).json({
+      success: true,
+      message: "Restaurant Profile Created Successfully",
+      data: restaurant,
+    });
+  } catch (err: any) {
+    console.error("Error Creating Restaurant:", err);
+    res.status(err.status || 400).json({
+      success: false,
+      message: err.message || "Failed to create restaurant",
+    });
   }
-  // GET /restaurant
+}
+
   static async getAllRestaurants(req: Request, res: Response) {
     try {
       const restaurant = await RestaurantService.getAllRestaurant();
@@ -76,7 +72,6 @@ export class RestaurantController {
     }
   }
 
-  // GET /restaurant/:id
   static async getRestaurantById(req: Request, res: Response) {
     try {
       const { id } = req.params;
@@ -102,13 +97,36 @@ export class RestaurantController {
     }
   }
 
-  // PUT /restaurant/:id
-  // PUT /restaurant/:id
+  static async getRestaurantBySlug(req: Request, res: Response) {
+    try {
+      const { slug } = req.params;
+      
+      const restaurant = await RestaurantService.getRestaurantBySlug(slug);
+
+      if (!restaurant) {
+        return res.status(404).json({
+          success: false,
+          message: "Restaurant not found",
+        });
+      }
+
+      res.status(200).json({
+        success: true,
+        data: restaurant,
+      });
+    } catch (err: any) {
+      console.error("Error fetching restaurant by slug:", err);
+      return res.status(500).json({
+        success: false,
+        message: "Failed to fetch restaurant",
+      });
+    }
+  }
+
   static async updateRestaurant(req: Request, res: Response) {
     try {
       const { id } = req.params;
 
-      // Auth Check
       const authHeader = req.headers.authorization;
       if (!authHeader)
         return res.status(401).json({ message: "No token provided" });
@@ -116,7 +134,6 @@ export class RestaurantController {
       const decoded: any = jwt.verify(token, process.env.JWT_SECRET as string);
       const userId = decoded.userId;
 
-      // Ownership Check
       const existingRestaurant = await RestaurantService.getRestaurantById(id);
       if (!existingRestaurant) {
         return res
@@ -129,19 +146,17 @@ export class RestaurantController {
           .json({ success: false, message: "Unauthorized" });
       }
 
-      // 1. Clean Parse
       const restaurantData = RestaurantController.parseRestaurantBody(req.body);
 
-      // 2. Pass Data AND File to Service
       const updated = await RestaurantService.updateRestaurant(
         id,
         restaurantData,
-        req.file // ✅ Pass the memory file object
+        req.file 
       );
 
       res.status(200).json({ success: true, data: updated });
     } catch (err: any) {
-      console.error("Error Updating Restaurant:", err); // Check Railway Logs for this!
+      console.error("Error Updating Restaurant:", err);
       res.status(500).json({
         success: false,
         message: err.message || "Failed to update restaurant",
@@ -150,7 +165,7 @@ export class RestaurantController {
   }
 
   // ===== Menu Management =====
-  // GET /restaurant/:id/menu
+  
   static async getMenuItems(req: Request, res: Response) {
     try {
       const { id } = req.params;
@@ -168,18 +183,15 @@ export class RestaurantController {
     }
   }
 
-  // POST /restaurant/:id/menu
-  // POST /restaurant/:id/menu
   static async addMenuItem(req: Request, res: Response) {
     try {
-      const { id } = req.params; // restaurantId
+      const { id } = req.params; 
       const data = req.body;
       
       if (data.price) {
         data.price = parseFloat(data.price);
       }
 
-      // Pass req.file (the memory file) to the service
       const item = await RestaurantService.addMenuItem(id, data, req.file);
 
       res.status(201).json({
@@ -196,7 +208,6 @@ export class RestaurantController {
     }
   }
 
-  // PUT /menu/:id
   static async updateMenuItem(req: Request, res: Response) {
     try {
       const { id } = req.params;
@@ -218,7 +229,6 @@ export class RestaurantController {
     }
   }
 
-  // DELETE /menu/:id
   static async deleteMenuItem(req: Request, res: Response) {
     try {
       const { id } = req.params;
@@ -231,7 +241,6 @@ export class RestaurantController {
     }
   }
 
-  // PATCH /menu/:id/toggle
   static async toggleMenuItemAvailability(req: Request, res: Response) {
     try {
       const { id } = req.params;
@@ -241,59 +250,6 @@ export class RestaurantController {
       res
         .status(500)
         .json({ success: false, message: "Failed to toggle status" });
-    }
-  }
-
-  //----------GET VENDOR EARNINGS ------------------//
-  static async getEarnings(req:Request, res:Response){
-    try {
-      const { id } = req.params  //Get restaurantId from URL
-      //Call the service logic
-      const earnings = await RestaurantService.getEarnings(id);
-
-      res.status(200).json({
-        success:true,
-        data:earnings,
-      });
-    }
-    catch(err: any){
-      console.error("Error fetching earnings:", err);
-      res.status(500).json({success:false, message:err.message || "Failed to fetch earnings"})
-    }
-  }
-
-  //----------------GET VENDOR TRANSACTIONS----------------------//
-  static async getTransactions(req:Request, res:Response){
-    try{
-      const {id} = req.params //This is restaurantID
-      const transactions = await RestaurantService.getTransactions(id)
-
-      return res.status(200).json({success:true, data:transactions})
-    }
-    catch(err: any){
-      return res.status(400).json({success:false, message: err.message  })
-    }
-  }
-
-  //--------------------------VENDOR REQUEST PAYOUT ------------------------------//
-  static async requestPayout(req:Request, res:Response){
-    try{
-      const { id } = req.params
-      const {amount, bankDetails} = req.body
-
-      if(!amount){
-        return res.status(400).json({success:true, message:"Amount is requiredd"})
-      }
-      if(!bankDetails){
-        return res.status(400).json({success:false, message:"Invalid Bank Details"})
-      }
-
-      const result = await RestaurantService.requestPayout(id, Number(amount), bankDetails)
-
-      return res.status(200).json({success:true, data:result})
-    }
-    catch(err: any){
-      return res.status(400).json({success:false, message:err.message})
     }
   }
 }

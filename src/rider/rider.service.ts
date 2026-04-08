@@ -174,6 +174,7 @@ export class RiderService {
 
       // (The Race Condition Fix): Atomic Update
       // instead of "finding" then "updating", we try to update ONLY IF riderId is null.
+      
       let updatedOrder;
       try {
         updatedOrder = await tx.order.update({
@@ -319,8 +320,8 @@ export class RiderService {
 
   // Get Earnings & Wallet Balance
   //Calculates pending balance and returns transaction history.
-  static async getRiderEarnings(riderId: string) {
-    const transactions = await prisma.transaction.findMany({
+  static async getRiderEarnings(riderId: string, db: PrismaClient | any = prisma ) {
+    const transactions = await db.transaction.findMany({
       where: { userId: riderId },
       orderBy: { createdAt: "desc" },
     });
@@ -370,73 +371,79 @@ export class RiderService {
 
   // 4. Request Payout
   //Creates a withdrawal request (Debit Transaction).
-
   static async requestPayout(userId: string, amount: number, bankDetails: any) {
-    // 1. Validate input (Assuming you use the same schema as vendor or similar)
-    const validData = payoutSchema.parse({ amount, bankDetails });
-    // 2. Fetch current earnings to check available balance
-    const { availableBalance } = await this.getRiderEarnings(userId);
+  const validData = payoutSchema.parse({ amount, bankDetails });
 
-    if (validData.amount < 1000)
-      throw new Error("Minimum withdrawal is ₦1,000");
+  if (validData.amount < 1000) {
+    throw new Error("Minimum withdrawal is ₦1,000");
+  }
+
+  return await prisma.$transaction(async (tx) => {
+    // 🔒 1. Lock the USER row (acts as financial lock)
+    await tx.$queryRaw`
+      SELECT id FROM "User"
+      WHERE id = ${userId}
+      FOR UPDATE
+    `;
+
+    // 🔒 2. Recalculate balance INSIDE the lock
+    const { availableBalance } = await this.getRiderEarnings(userId, tx);
+
     if (validData.amount > availableBalance) {
       throw new Error(
-        `Insufficient funds. Available: ₦${availableBalance.toLocaleString()}`,
+        `Insufficient funds. Available: ₦${availableBalance.toLocaleString()}`
       );
     }
 
-    // 3. Fetch Rider details for notifications
-    const rider = await prisma.user.findUnique({
+    // 🔒 3. Fetch rider (inside transaction for consistency)
+    const rider = await tx.user.findUnique({
       where: { id: userId },
       select: { name: true, email: true },
     });
 
     if (!rider) throw new Error("Rider not found");
 
-    // 4. Atomic Transaction: Create the Ledger Entry
-    return await prisma.$transaction(async (tx) => {
-      const transaction = await tx.transaction.create({
-        data: {
-          userId,
-          amount: validData.amount,
-          type: TransactionType.DEBIT,
-          category: TransactionCategory.WITHDRAWAL,
-          status: TransactionStatus.PENDING, // Funds are "locked"
-          description: `Manual Payout Request to ${validData.bankDetails.bankName} (${validData.bankDetails.accountNumber})`,
-          reference: `RID-PAY-${Date.now()}`,
-        },
-      });
-
-      // 5. Trigger Notifications (Non-blocking)
-      try {
-        // Alert Admin: "
-        await sendAdminPayoutAlert(
-          rider.name,
-          validData.amount,
-          validData.bankDetails,
-        );
-
-        // Notify Rider: "We've received your request"
-        if (rider.email) {
-          await sendPayoutRequestEmail({
-            email: rider.email,
-            ownerName: rider.name,
-            restaurantName: "Rider Wallet", // Adjusting template usage
-            amount: validData.amount,
-            bankName: validData.bankDetails.bankName,
-            accountNumber: validData.bankDetails.accountNumber,
-          });
-        }
-      } catch (e: any) {
-        console.error(
-          "Notification failed, but transaction recorded:",
-          e.message,
-        );
-      }
-
-      return transaction;
+    // 🔒 4. Create the DEBIT transaction (this is your "lock" on funds)
+    const transaction = await tx.transaction.create({
+      data: {
+        userId,
+        amount: validData.amount,
+        type: TransactionType.DEBIT,
+        category: TransactionCategory.WITHDRAWAL,
+        status: TransactionStatus.PENDING, // funds reserved
+        description: `Manual Payout Request to ${validData.bankDetails.bankName} (${validData.bankDetails.accountNumber})`,
+        reference: `RID-PAY-${Date.now()}`,
+      },
     });
-  }
+
+    return { transaction, rider };
+  }).then(async ({ transaction, rider }) => {
+    // 🚀 Notifications OUTSIDE transaction
+    try {
+      await sendAdminPayoutAlert(
+        rider.name,
+        validData.amount,
+        validData.bankDetails
+      );
+
+      if (rider.email) {
+        await sendPayoutRequestEmail({
+          email: rider.email,
+          ownerName: rider.name,
+          restaurantName: "Rider Wallet",
+          amount: validData.amount,
+          bankName: validData.bankDetails.bankName,
+          accountNumber: validData.bankDetails.accountNumber,
+        });
+      }
+    } catch (e: any) {
+      console.error("Notification failed:", e.message);
+    }
+
+    return transaction;
+  });
+}
+
 
   static async getDeliveryHistory(riderId: string) {
     const orders = await prisma.order.findMany({

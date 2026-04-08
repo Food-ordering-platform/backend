@@ -204,6 +204,7 @@ enum OrderStatus {
   CANCELLED
   READY_FOR_PICKUP
   RIDER_ACCEPTED
+  UNDERPAID
 }
 
 enum PaymentStatus {
@@ -211,6 +212,7 @@ enum PaymentStatus {
   PAID
   FAILED
   REFUNDED
+  UNDERPAID
 }
 
 enum Role {

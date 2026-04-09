@@ -1,7 +1,7 @@
 "use strict";
-//Haversine formular for calculating distance between 2 points on the earth
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.calculateDeliveryFee = exports.calculateDistance = void 0;
+const pricing_1 = require("../config/pricing"); // 🟢 Import the central config
 const TORTUOSITY_FACTOR = 1.5;
 function deg2rad(deg) {
     return deg * (Math.PI / 180);
@@ -21,16 +21,15 @@ const calculateDistance = (lat1, lon1, lat2, lon2) => {
 };
 exports.calculateDistance = calculateDistance;
 const calculateDeliveryFee = (distanceKm) => {
-    const BASE_DISTANCE = 2; // First 2km
-    const BASE_FEE = 500;
-    const PER_KM_RATE = 100;
-    if (distanceKm <= BASE_DISTANCE) {
-        return BASE_FEE;
+    // 🟢 Read from the single source of truth
+    const { DELIVERY_BASE_DISTANCE_KM, DELIVERY_BASE_FEE, DELIVERY_PER_KM_RATE } = pricing_1.PRICING;
+    if (distanceKm <= DELIVERY_BASE_DISTANCE_KM) {
+        return DELIVERY_BASE_FEE;
     }
-    const extraKm = distanceKm - BASE_DISTANCE;
-    const extraFee = extraKm * PER_KM_RATE;
-    // Return total fee rounded to nearest whole number
-    return Math.ceil(BASE_FEE + extraFee);
+    const extraKm = distanceKm - DELIVERY_BASE_DISTANCE_KM;
+    const extraFee = extraKm * DELIVERY_PER_KM_RATE;
+    // Return total fee rounded up to the nearest whole Naira
+    return Math.ceil(DELIVERY_BASE_FEE + extraFee);
 };
 exports.calculateDeliveryFee = calculateDeliveryFee;
 //# sourceMappingURL=haversine.js.map

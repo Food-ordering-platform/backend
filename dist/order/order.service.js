@@ -1,26 +1,18 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.OrderService = void 0;
-const prisma_1 = require("../../generated/prisma");
+const client_1 = require("@prisma/client");
 const payment_service_1 = require("../payment/payment.service");
 const crypto_1 = require("crypto");
-const mailer_1 = require("../utils/mailer");
-const notification_1 = require("../utils/notification");
-const socket_1 = require("../utils/socket");
+const email_service_1 = require("../utils/email/email.service");
 const haversine_1 = require("../utils/haversine");
 const pricing_1 = require("../config/pricing");
-const web_push_1 = require("../utils/web-push");
-const prisma = new prisma_1.PrismaClient();
+const push_notification_1 = require("../utils/push-notification");
+const prisma = new client_1.PrismaClient();
 function generateReference() {
     return (0, crypto_1.randomBytes)(12).toString("hex");
 }
 class OrderService {
-    static calculateVendorShare(totalAmount, deliveryFee) {
-        const foodRevenue = totalAmount - (deliveryFee + pricing_1.PRICING.PLATFORM_FEE);
-        const vendorShare = foodRevenue * 0.85;
-        return Math.max(0, vendorShare);
-    }
-    // ... (getOrderQuote and createOrderWithPayment remain unchanged) ...
     static async getOrderQuote(restaurantId, deliveryLatitude, deliveryLongitude, items) {
         const restaurant = await prisma.restaurant.findUnique({
             where: { id: restaurantId },
@@ -41,36 +33,52 @@ class OrderService {
             distanceKm: parseFloat(distance.toFixed(2)),
         };
     }
-    static async createOrderWithPayment(customerId, restaurantId, deliveryAddress, deliveryNotes, deliveryLatitude, deliveryLongitude, items, customerName, customerEmail, idempotencyKey) {
+    static async createOrderWithPayment(customerId, restaurantId, deliveryAddress, deliveryPhoneNumber, deliveryNotes, deliveryLatitude, deliveryLongitude, items, customerName, customerEmail, idempotencyKey) {
+        // 1. Idempotency Check (With Restaurant Status Validation)
         if (idempotencyKey) {
             const existingOrder = await prisma.order.findUnique({
                 where: { idempotencyKey },
+                // Fetch the restaurant's current open status dynamically
+                include: { restaurant: { select: { isOpen: true } } }
             });
             if (existingOrder) {
                 console.log(`🛡️ Idempotency Hit: Returning existing order ${existingOrder.reference}`);
+                // 🟢 THE FIX: Block the checkout URL if they are trying to pay after the restaurant closed!
+                if (existingOrder.paymentStatus === client_1.PaymentStatus.PENDING && !existingOrder.restaurant.isOpen) {
+                    throw new Error("Checkout failed: This restaurant has closed since you initiated this order. You can no longer complete this payment.");
+                }
                 return {
                     order: existingOrder,
                     checkoutUrl: existingOrder.checkoutUrl,
                 };
             }
         }
+        // 2. Fetch Restaurant
         const restaurant = await prisma.restaurant.findUnique({
             where: { id: restaurantId },
             include: { owner: true },
         });
         if (!restaurant)
             throw new Error("Restaurant not found");
+        // 🟢 EDGE CASE FIX: Block brand new checkouts if the restaurant is closed!
+        if (!restaurant.isOpen) {
+            throw new Error("Checkout failed: This restaurant is currently closed. Please check back later.");
+        }
+        // 3. Calculate Distance and Delivery Fee
         let deliveryFee = 0;
+        let deliveryDistance = 0;
         if (restaurant.latitude &&
             restaurant.longitude &&
             deliveryLatitude &&
             deliveryLongitude) {
-            const distance = (0, haversine_1.calculateDistance)(restaurant.latitude, restaurant.longitude, deliveryLatitude, deliveryLongitude);
-            deliveryFee = (0, haversine_1.calculateDeliveryFee)(distance);
+            deliveryDistance = (0, haversine_1.calculateDistance)(restaurant.latitude, restaurant.longitude, deliveryLatitude, deliveryLongitude);
+            deliveryFee = (0, haversine_1.calculateDeliveryFee)(deliveryDistance);
         }
         else {
-            deliveryFee = 500;
+            deliveryFee = 800;
+            deliveryDistance = 2;
         }
+        // 4. Validate Menu Items and Subtotal
         const menuItemIds = items.map((item) => item.menuItemId);
         const dbMenuItems = await prisma.menuItem.findMany({
             where: { id: { in: menuItemIds } },
@@ -80,7 +88,11 @@ class OrderService {
         const validItems = items.map((i) => {
             const originalItem = itemsMap.get(i.menuItemId);
             if (!originalItem)
-                throw new Error(`Menu item ${i.menuItemId} not found`);
+                throw new Error(`Menu item not found`);
+            //  EDGE CASE FIX: Check if the specific item is still available!
+            if (!originalItem.available) {
+                throw new Error(`Checkout failed: ${originalItem.name} is no longer available.`);
+            }
             const itemTotal = originalItem.price * i.quantity;
             subtotal += itemTotal;
             return {
@@ -91,6 +103,7 @@ class OrderService {
             };
         });
         const finalTotal = subtotal + deliveryFee + pricing_1.PRICING.PLATFORM_FEE;
+        // 5. Generate unique reference
         let reference = generateReference();
         let referenceExists = true;
         while (referenceExists) {
@@ -100,17 +113,22 @@ class OrderService {
             else
                 reference = generateReference();
         }
+        // 6. Initiate Payment Gateway
         const checkoutUrl = await payment_service_1.PaymentService.initiatePayment(finalTotal, customerName, customerEmail, reference);
+        // 7. Generate Delivery Code
         const deliveryCode = Math.floor(1000 + Math.random() * 9000).toString();
+        // 8. Create Order in Database
         const order = await prisma.order.create({
             data: {
                 customerId,
                 restaurantId,
                 totalAmount: finalTotal,
                 deliveryFee: deliveryFee,
-                paymentStatus: "PENDING",
-                status: "PENDING",
+                paymentStatus: client_1.PaymentStatus.PENDING,
+                status: client_1.OrderStatus.PENDING,
+                deliveryDistance: parseFloat(deliveryDistance.toFixed(2)),
                 deliveryAddress,
+                deliveryPhoneNumber,
                 deliveryNotes: deliveryNotes || null,
                 deliveryLatitude,
                 deliveryLongitude,
@@ -127,7 +145,9 @@ class OrderService {
         return { order, checkoutUrl };
     }
     // ✅ UPDATED: Sends email with REAL DB reference
-    static async processSuccessfulPayment(reference) {
+    // The rewritten, bulletproof processor
+    static async processSuccessfulPayment(reference, paystackAmountInKobo) {
+        // 1. Fetch the order details first (No lock needed yet)
         const order = await prisma.order.findUnique({
             where: { reference },
             include: {
@@ -137,32 +157,43 @@ class OrderService {
         });
         if (!order)
             return null;
-        if (order.paymentStatus === "PAID")
-            return order;
-        const updatedOrder = await prisma.order.update({
-            where: { id: order.id },
+        // 2. THE UNDERPAYMENT CHECK
+        // Paystack sends kobo, so divide by 100.
+        const amountPaidInNaira = paystackAmountInKobo / 100;
+        if (amountPaidInNaira < order.totalAmount) {
+            console.error(`Underpayment on ${reference}! Paid: ${amountPaidInNaira}, Expected: ${order.totalAmount}`);
+            // Update to FAILED_UNDERPAID safely
+            await prisma.order.update({
+                where: { id: order.id },
+                data: { status: client_1.OrderStatus.UNDERPAID }
+            });
+            return null;
+        }
+        // 3. THE OPTIMISTIC LOCK (The Ultimate Idempotency Check)
+        // Instead of checking the status in Node.js, we force Postgres to check it.
+        const updatedOrderResult = await prisma.order.updateMany({
+            where: {
+                id: order.id,
+                paymentStatus: "PENDING" // <--- CRITICAL: Fails instantly if already PAID
+            },
             data: { paymentStatus: "PAID" },
         });
+        // If count is 0, it means Webhook B arrived late and the status was already PAID.
+        // We silently drop Webhook B. Idempotency successful!
+        if (updatedOrderResult.count === 0) {
+            console.log(`Duplicate webhook ignored. Order ${reference} is already processed.`);
+            return order;
+        }
+        // 4. NOTIFICATIONS (100% Safe)
+        // We only reach this line if count === 1 (meaning THIS specific webhook won the race)
         if (order.customer && order.customer.email) {
-            // ✅ FIX: Use order.reference
-            (0, mailer_1.sendOrderStatusEmail)(order.customer.email, order.customer.name, order.reference, // <--- THE FIX
-            "PENDING").catch((e) => console.log("Payment success email failed", e));
+            (0, email_service_1.sendOrderStatusEmail)(order.customer.email, order.customer.name, order.reference, "PAID" // Changed from PENDING to PAID
+            ).catch((e) => console.log("Payment success email failed", e));
         }
         if (order.restaurant?.owner?.pushToken) {
-            (0, notification_1.sendPushNotification)(order.restaurant.owner.pushToken, "New Order Paid! 💰", `Order #${order.reference.slice(0, 4).toUpperCase()} confirmed. ₦${order.totalAmount}`, { orderId: order.id });
+            (0, push_notification_1.sendPushToVendor)(order.restaurant.owner.pushToken, "New Order Paid! 💰", `Order #${order.reference.slice(0, 4).toUpperCase()}`).catch((e) => console.log("Push failed", e)); // Always catch floating promises!
         }
-        try {
-            const io = (0, socket_1.getSocketIO)();
-            io.to(`restaurant_${order.restaurantId}`).emit("new_order", {
-                message: "New Order Paid! 🔔",
-                orderId: order.id,
-                totalAmount: order.totalAmount,
-            });
-        }
-        catch (error) {
-            console.log("Socket emit failed", error);
-        }
-        return updatedOrder;
+        return order;
     }
     static async getOrdersByCustomer(customerId) {
         return prisma.order.findMany({
@@ -209,130 +240,6 @@ class OrderService {
                 },
             },
         });
-    }
-    static async getVendorOrders(restaurantId) {
-        const orders = await prisma.order.findMany({
-            where: { restaurantId, paymentStatus: { in: ["PAID", "REFUNDED"] } },
-            include: {
-                items: true,
-                customer: { select: { name: true, phone: true, address: true } },
-            },
-            orderBy: { createdAt: "desc" },
-        });
-        return orders.map((order) => {
-            return {
-                ...order,
-                riderName: order.riderName,
-                riderPhone: order.riderPhone,
-                vendorFoodTotal: OrderService.calculateVendorShare(order.totalAmount, order.deliveryFee),
-            };
-        });
-    }
-    static async distributeVendorEarnings(orderId) {
-        const order = await prisma.order.findUnique({
-            where: { id: orderId },
-            include: { restaurant: true },
-        });
-        if (!order) {
-            throw new Error(`Order with ID ${orderId} not found`);
-        }
-        const vendorShare = OrderService.calculateVendorShare(order.totalAmount, order.deliveryFee);
-        await prisma.transaction.create({
-            data: {
-                userId: order.restaurant.ownerId,
-                amount: vendorShare,
-                type: "CREDIT",
-                category: "ORDER_EARNING",
-                status: "SUCCESS",
-                orderId: order.id,
-                description: `Earnings for Order #${order.reference}`,
-            },
-        });
-    }
-    // ✅ UPDATED: Sends delivery code using REAL DB reference
-    static async updateOrderStatus(orderId, status) {
-        const order = await prisma.order.findUnique({
-            where: { id: orderId },
-            include: { restaurant: true },
-        });
-        if (!order)
-            throw new Error("Order not found");
-        let newPaymentStatus = order.paymentStatus;
-        if (status === "CANCELLED" && order.paymentStatus === "PAID") {
-            await payment_service_1.PaymentService.refund(order.reference).catch(e => console.error("Refund failed", e));
-            newPaymentStatus = "REFUNDED";
-        }
-        const updatedOrder = await prisma.order.update({
-            where: { id: orderId },
-            data: { status, paymentStatus: newPaymentStatus },
-            include: { customer: true },
-        });
-        try {
-            const io = (0, socket_1.getSocketIO)();
-            io.to(`restaurant_${order.restaurantId}`).emit("order_updated", {
-                orderId: order.id,
-                status: status
-            });
-        }
-        catch (e) {
-            console.error("Socket emit failed", e);
-        }
-        if (status === "PREPARING") {
-            if (updatedOrder.customer?.pushToken) {
-                (0, notification_1.sendPushNotification)(updatedOrder.customer.pushToken, "Order Accepted!", "The vendor is preparing your food.");
-            }
-            if (updatedOrder.customer?.email && updatedOrder.deliveryCode) {
-                (0, mailer_1.sendDeliveryCode)(updatedOrder.customer.email, updatedOrder.deliveryCode, updatedOrder.reference).catch(err => console.error("Failed to send delivery code:", err));
-            }
-        }
-        // 🟢 UPDATED: Notify ALL Logistics Partners
-        if (status === "READY_FOR_PICKUP") {
-            try {
-                // 1. Fetch ALL Logistics Partners (with their Owner details for the User ID)
-                const allPartners = await prisma.logisticsPartner.findMany({
-                    include: { owner: true }
-                });
-                console.log(`🔔 Broadcasting 'Ready for Pickup' to ${allPartners.length} Dispatchers`);
-                // 2. Send Push Notification to EACH Partner's Owner
-                const pushPromises = allPartners.map(partner => {
-                    if (partner.owner?.id) {
-                        return (0, web_push_1.sendWebPushNotification)(partner.owner.id, {
-                            title: "New Job Alert! 🚨",
-                            body: `Order #${order.reference} is ready at ${order.restaurant.name}`,
-                            url: `/dashboard/orders`, // Opens the dispatch dashboard
-                            data: {
-                                orderId: order.id,
-                                status: 'READY_FOR_PICKUP',
-                                trackingId: order.trackingId,
-                                type: 'DISPATCH_BROADCAST'
-                            }
-                        }).catch(err => console.error(`Failed to push to ${partner.name}:`, err));
-                    }
-                });
-                await Promise.all(pushPromises);
-                // 3. Socket Emit (This naturally goes to all dispatchers listening)
-                const io = (0, socket_1.getSocketIO)();
-                io.to("dispatchers").emit("new_dispatcher_request", {
-                    orderId: order.id,
-                    status: status,
-                    restaurantName: order.restaurant.name,
-                    restaurantAddress: order.restaurant.address,
-                    customerAddress: order.deliveryAddress,
-                    totalAmount: order.totalAmount,
-                    deliveryFee: order.deliveryFee,
-                    pickupTime: new Date().toISOString(),
-                });
-                console.log(`🚚 Riders Requested for Order #${order.reference}`);
-            }
-            catch (error) {
-                console.error("Broadcast error:", error);
-            }
-        }
-        // Standard Status Email
-        if (updatedOrder.customer?.email) {
-            (0, mailer_1.sendOrderStatusEmail)(updatedOrder.customer.email, updatedOrder.customer.name, updatedOrder.reference, status);
-        }
-        return updatedOrder;
     }
 }
 exports.OrderService = OrderService;

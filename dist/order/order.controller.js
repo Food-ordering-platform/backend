@@ -2,7 +2,6 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.OrderController = void 0;
 const order_service_1 = require("./order.service");
-const restaurant_service_1 = require("../restuarant/restaurant.service");
 class OrderController {
     // ✅ NEW: Calculate Quote
     static async getQuote(req, res) {
@@ -22,13 +21,13 @@ class OrderController {
     // Create a new order AND initialize payment
     static async createOrder(req, res) {
         try {
-            const { customerId, restaurantId, deliveryAddress, deliveryNotes, deliveryLatitude, deliveryLongitude, items, name, email, idempotencyKey: bodyKey } = req.body;
+            const { customerId, restaurantId, deliveryAddress, deliveryPhoneNumber, deliveryNotes, deliveryLatitude, deliveryLongitude, items, name, email, idempotencyKey: bodyKey } = req.body;
             const headerKey = req.headers['idempotency-key'];
             const idempotencyKey = bodyKey || headerKey;
             if (!customerId || !restaurantId || !deliveryAddress || !items || !name || !email) {
                 return res.status(400).json({ success: false, message: "Missing required fields" });
             }
-            const { order, checkoutUrl } = await order_service_1.OrderService.createOrderWithPayment(customerId, restaurantId, deliveryAddress, deliveryNotes, deliveryLatitude, deliveryLongitude, items, name, email, idempotencyKey);
+            const { order, checkoutUrl } = await order_service_1.OrderService.createOrderWithPayment(customerId, restaurantId, deliveryAddress, deliveryPhoneNumber, deliveryNotes, deliveryLatitude, deliveryLongitude, items, name, email, idempotencyKey);
             return res.status(201).json({
                 success: true,
                 data: {
@@ -76,50 +75,6 @@ class OrderController {
         catch (err) {
             console.error("Get single order error:", err.message);
             return res.status(500).json({ success: false, message: err.message || "Server Error" });
-        }
-    }
-    static async getVendorOrders(req, res) {
-        try {
-            const { restaurantId } = req.params;
-            if (!restaurantId) {
-                return res.status(400).json({ success: false, message: "Restaurant ID is required" });
-            }
-            const orders = await order_service_1.OrderService.getVendorOrders(restaurantId);
-            return res.status(200).json({ success: true, data: orders });
-        }
-        catch (err) {
-            console.error("Get Vendor orders error", err);
-            return res.status(500).json({ success: false, message: err.message || "Server Error" });
-        }
-    }
-    static async updateOrderStatus(req, res) {
-        try {
-            const { id } = req.params;
-            const { status } = req.body;
-            if (!id || !status) {
-                return res.status(400).json({ success: false, Message: "OrderID and status is required" });
-            }
-            const updateOrder = await order_service_1.OrderService.updateOrderStatus(id, status);
-            return res.status(200).json({ success: true, data: updateOrder });
-        }
-        catch (err) {
-            console.error("Update order status error", err);
-            const statusCode = err.message.includes("Invalid State Transition") ? 400 : 500;
-            return res.status(statusCode).json({ success: false, message: err.message || "Server Error" });
-        }
-    }
-    // Add inside OrderController class
-    static async rateOrder(req, res) {
-        try {
-            const { id } = req.params; // Order ID
-            const { rating, comment } = req.body;
-            if (!req.user)
-                throw new Error("Unauthorized");
-            const review = await restaurant_service_1.RestaurantService.addReview(req.user.id, id, rating, comment);
-            return res.status(200).json({ success: true, data: review });
-        }
-        catch (err) {
-            return res.status(400).json({ success: false, message: err.message });
         }
     }
 }

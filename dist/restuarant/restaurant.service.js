@@ -1,141 +1,181 @@
 "use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.RestaurantService = void 0;
-const prisma_1 = require("../../generated/prisma");
+const client_1 = require("@prisma/client");
 const upload_1 = require("../cloudinary/upload");
-const mailer_1 = require("../utils/mailer");
-const order_service_1 = require("../order/order.service");
-const restaurant_validator_1 = require("./restaurant.validator");
-const prisma = new prisma_1.PrismaClient();
+const redis_1 = require("../config/redis");
+const slugify_1 = __importDefault(require("slugify"));
+const email_service_1 = require("../utils/email/email.service");
+const prisma = new client_1.PrismaClient();
 class RestaurantService {
-    // Create Restaurant
-    // Create Restaurant with File Handling
+    /**
+     * 🟢 The Master Cache Clearer
+     * Wipes ALL relevant caches (ID, Slug, Menu, and Global List) instantly.
+     * Accepts string | null to prevent TypeScript errors.
+     */
+    static async clearRestaurantCache(id, slug) {
+        const keys = [
+            this.CACHE_KEYS.RESTAURANT_BY_ID(id),
+            this.CACHE_KEYS.ALL_RESTAURANTS,
+            this.CACHE_KEYS.MENU_ITEMS(id)
+        ];
+        if (slug) {
+            keys.push(this.CACHE_KEYS.RESTAURANT_BY_SLUG(slug));
+        }
+        await Promise.all(keys.map(key => redis_1.redisClient.del(key)));
+        console.log(`🧹 Cache cleared for restaurant: ${id} | slug: ${slug}`);
+    }
+    // ===== Restaurant Profile =====
     static async createRestaurant(ownerId, data, file) {
-        // 1. Check existence
         const existing = await prisma.restaurant.findUnique({ where: { ownerId } });
         if (existing) {
             throw new Error("You already have a restaurant");
         }
-        // 2. Handle File Upload 
+        // Generate base slug from the restaurant name
+        let baseSlug = (0, slugify_1.default)(data.name, { lower: true, strict: true });
+        let slug = baseSlug;
+        let counter = 1;
+        // Ensure the slug is unique in the database
+        while (await prisma.restaurant.findUnique({ where: { slug } })) {
+            slug = `${baseSlug}-${counter}`;
+            counter++;
+        }
         let imageUrl = undefined;
         if (file) {
-            // Use your Cloudinary helper here.
-            // This ensures we get a secure URL back before saving to DB.
             const uploadResult = await (0, upload_1.uploadToCloudinary)(file);
             imageUrl = uploadResult.secure_url || uploadResult.url;
         }
-        // 3. Create in DB
-        return await prisma.restaurant.create({
+        const newRestaurant = await prisma.restaurant.create({
             data: {
                 ownerId,
+                slug,
                 name: data.name,
                 address: data.address,
                 phone: data.phone,
                 email: data.email,
-                imageUrl: imageUrl, // Save the URL
+                imageUrl: imageUrl,
                 prepTime: data.prepTime || 20,
                 minimumOrder: data.minimumOrder ?? 0.0,
                 isOpen: data.isOpen ?? true,
                 latitude: data.latitude,
-                longitude: data.longitude
+                longitude: data.longitude,
             },
         });
+        // 🧹 Clear caches
+        await this.clearRestaurantCache(newRestaurant.id, newRestaurant.slug);
+        const owner = await prisma.user.findUnique({ where: { id: ownerId } });
+        const recipientEmail = owner?.email || data.email;
+        if (recipientEmail) {
+            (0, email_service_1.sendRestaurantVerificationPendingEmail)(recipientEmail, newRestaurant.name).catch(console.error);
+        }
+        return newRestaurant;
     }
-    // Get all restaurants
     static async getAllRestaurant() {
-        return await prisma.restaurant.findMany({
+        const cachedData = await redis_1.redisClient.get(this.CACHE_KEYS.ALL_RESTAURANTS);
+        if (cachedData) {
+            console.log("⚡ Serving restaurants from Redis Cache");
+            return JSON.parse(cachedData);
+        }
+        console.log("🐌 Serving restaurants from Database");
+        const restaurants = await prisma.restaurant.findMany({
+            select: {
+                id: true, name: true, address: true, phone: true,
+                imageUrl: true, prepTime: true, minimumOrder: true, isOpen: true, slug: true
+            },
+        });
+        await redis_1.redisClient.setex(this.CACHE_KEYS.ALL_RESTAURANTS, 3600, JSON.stringify(restaurants));
+        return restaurants;
+    }
+    static async getRestaurantBySlug(slug) {
+        const cacheKey = this.CACHE_KEYS.RESTAURANT_BY_SLUG(slug);
+        const cached = await redis_1.redisClient.get(cacheKey);
+        if (cached)
+            return JSON.parse(cached);
+        const restaurant = await prisma.restaurant.findUnique({
+            where: { slug },
             select: {
                 id: true,
+                slug: true,
                 name: true,
                 address: true,
-                phone: true,
                 imageUrl: true,
                 prepTime: true,
                 minimumOrder: true,
                 isOpen: true,
-            },
+                categories: { include: { menuItems: true } }
+            }
         });
+        if (restaurant) {
+            await redis_1.redisClient.setex(cacheKey, 3600, JSON.stringify(restaurant));
+        }
+        return restaurant;
     }
-    // Get a single restaurant by ID (with menu)
     static async getRestaurantById(id) {
-        return await prisma.restaurant.findUnique({
+        const cacheKey = this.CACHE_KEYS.RESTAURANT_BY_ID(id);
+        const cached = await redis_1.redisClient.get(cacheKey);
+        if (cached)
+            return JSON.parse(cached);
+        const restaurant = await prisma.restaurant.findUnique({
             where: { id },
-            include: {
-                categories: {
-                    include: {
-                        menuItems: true, // nested items
-                    },
-                },
-                // orders: {
-                //   select: {
-                //     id: true,
-                //     customerId: true,
-                //     totalAmount: true,
-                //     paymentStatus: true,
-                //     status: true,
-                //     deliveryAddress: true,
-                //     createdAt: true,
-                //     updatedAt: true,
-                //   },
-                // },
-            },
+            include: { categories: { include: { menuItems: true } } },
         });
+        if (restaurant) {
+            await redis_1.redisClient.setex(cacheKey, 3600, JSON.stringify(restaurant));
+        }
+        return restaurant;
     }
-    // Update restaurant info
-    // Update restaurant info
     static async updateRestaurant(id, data, file) {
-        // 1. Handle File Upload if provided
         let imageUrl = undefined;
         if (file) {
-            // ✅ Upload to Cloudinary
             const uploadResult = await (0, upload_1.uploadToCloudinary)(file);
             imageUrl = uploadResult.secure_url || uploadResult.url;
         }
-        // 2. Prepare Update Data
         const updateData = Object.fromEntries(Object.entries(data).filter(([_, value]) => value !== undefined));
-        // Only update the image URL if a new one was uploaded
         if (imageUrl) {
             updateData.imageUrl = imageUrl;
         }
-        return await prisma.restaurant.update({
+        const updatedRestaurant = await prisma.restaurant.update({
             where: { id },
             data: updateData,
         });
+        // 🧹 Fix: Clear specific ID, Slug, and List cache so open/close toggles show immediately
+        await this.clearRestaurantCache(id, updatedRestaurant.slug);
+        return updatedRestaurant;
     }
     // ===== Menu Items =====
-    // Get all menu items for a restaurant
     static async getMenuItems(restaurantId) {
-        return await prisma.menuItem.findMany({
+        const cacheKey = this.CACHE_KEYS.MENU_ITEMS(restaurantId);
+        const cached = await redis_1.redisClient.get(cacheKey);
+        if (cached)
+            return JSON.parse(cached);
+        const items = await prisma.menuItem.findMany({
             where: { restaurantId },
             include: { category: true },
         });
+        await redis_1.redisClient.setex(cacheKey, 3600, JSON.stringify(items));
+        return items;
     }
-    // Add a new menu item
-    // [FIX] Added 'file' parameter
     static async addMenuItem(restaurantId, data, file) {
-        // 1. Verify restaurant exists
         const restaurant = await prisma.restaurant.findUnique({
             where: { id: restaurantId },
         });
         if (!restaurant)
             throw new Error("Restaurant not found");
-        // 2. Handle File Upload (Ticketer Strategy)
-        let imageUrl = data.imageUrl; // Keep existing if passed, though unlikely
+        let imageUrl = data.imageUrl;
         if (file) {
             const uploadResult = await (0, upload_1.uploadToCloudinary)(file);
             imageUrl = uploadResult.secure_url || uploadResult.url;
         }
         let categoryId = data.categoryId;
-        // 3. Find or Create Category
         if (data.categoryName) {
             const cleanName = data.categoryName.trim();
             const existingCategory = await prisma.menuCategory.findFirst({
                 where: {
                     restaurantId,
-                    name: {
-                        equals: cleanName,
-                        mode: "insensitive",
-                    },
+                    name: { equals: cleanName, mode: "insensitive" },
                 },
             });
             if (existingCategory) {
@@ -143,10 +183,7 @@ class RestaurantService {
             }
             else {
                 const newCategory = await prisma.menuCategory.create({
-                    data: {
-                        name: cleanName,
-                        restaurantId,
-                    },
+                    data: { name: cleanName, restaurantId },
                 });
                 categoryId = newCategory.id;
             }
@@ -154,186 +191,64 @@ class RestaurantService {
         if (!categoryId) {
             throw new Error("Category is required");
         }
-        // 4. Create Menu Item
-        return await prisma.menuItem.create({
+        const newItem = await prisma.menuItem.create({
             data: {
                 name: data.name,
-                description: data.description,
                 price: data.price,
-                imageUrl: imageUrl, // Uses the Cloudinary URL
+                imageUrl: imageUrl,
                 available: true,
                 restaurantId,
                 categoryId,
             },
         });
+        // 🧹 Fix: Pass the restaurant slug to clear the frontend cache
+        await this.clearRestaurantCache(restaurantId, restaurant.slug);
+        return newItem;
     }
-    // Update menu item
     static async updateMenuItem(id, data) {
-        return await prisma.menuItem.update({
+        const updatedItem = await prisma.menuItem.update({
             where: { id },
             data,
+            // 🟢 Fetch the restaurant slug at the same time so we know what cache to clear
+            include: { restaurant: { select: { slug: true } } }
         });
+        // 🧹 Fix: Instantly clear frontend slug cache
+        await this.clearRestaurantCache(updatedItem.restaurantId, updatedItem.restaurant.slug);
+        return updatedItem;
     }
-    // Delete menu item
     static async deleteMenuItem(id) {
-        return await prisma.menuItem.delete({
+        const deletedItem = await prisma.menuItem.delete({
             where: { id },
+            // 🟢 Fetch the restaurant slug so we know what cache to clear
+            include: { restaurant: { select: { slug: true } } }
         });
+        // 🧹 Fix: Instantly clear frontend slug cache
+        await this.clearRestaurantCache(deletedItem.restaurantId, deletedItem.restaurant.slug);
+        return deletedItem;
     }
-    // Toggle menu item availability
     static async toggleMenuItemAvailability(id) {
-        const item = await prisma.menuItem.findUnique({ where: { id } });
+        const item = await prisma.menuItem.findUnique({
+            where: { id },
+            // 🟢 Grab the slug right away
+            include: { restaurant: { select: { slug: true } } }
+        });
         if (!item)
             throw new Error("Menu item not found");
-        return await prisma.menuItem.update({
+        const updatedItem = await prisma.menuItem.update({
             where: { id },
             data: { available: !item.available },
         });
-    }
-    //---------------GET EARNING FOR VENDOR -------------------//
-    // Add this method to RestaurantService
-    static async getEarnings(restaurantId) {
-        // 1. Get the Owner (To find their Wallet)
-        const restaurant = await prisma.restaurant.findUnique({
-            where: { id: restaurantId },
-            select: { ownerId: true }
-        });
-        if (!restaurant)
-            throw new Error("Restaurant not found");
-        // ============================================================
-        // A. AVAILABLE BALANCE (From Transaction Table)
-        // ============================================================
-        // Sum of all Credits (Earnings) minus Debits (Withdrawals)
-        const walletStats = await prisma.transaction.groupBy({
-            by: ['type'],
-            where: {
-                userId: restaurant.ownerId,
-                status: { in: ['SUCCESS', 'PENDING'] } // Count PENDING withdrawals so they can't overdraw
-            },
-            _sum: { amount: true }
-        });
-        let totalCredit = 0;
-        let totalDebit = 0;
-        walletStats.forEach(stat => {
-            if (stat.type === 'CREDIT')
-                totalCredit = stat._sum.amount || 0;
-            if (stat.type === 'DEBIT')
-                totalDebit = stat._sum.amount || 0;
-        });
-        const availableBalance = totalCredit - totalDebit;
-        // ============================================================
-        // B. PENDING BALANCE (From Orders Table)
-        // ============================================================
-        // Money currently "stuck" in active orders (Paid but not Delivered)
-        const pendingOrders = await prisma.order.findMany({
-            where: {
-                restaurantId,
-                paymentStatus: "PAID",
-                status: { in: ["PREPARING", "READY_FOR_PICKUP"] } // Cooking, Ready, or Out for Delivery
-            },
-            select: { totalAmount: true, deliveryFee: true }
-        });
-        // Use the shared helper to calculate pending money accurately
-        const pendingBalance = pendingOrders.reduce((sum, order) => {
-            return sum + order_service_1.OrderService.calculateVendorShare(order.totalAmount, order.deliveryFee);
-        }, 0);
-        return {
-            availableBalance: availableBalance, // Real Money
-            pendingBalance: pendingBalance, // Future Money
-            currency: "NGN",
-        };
-    }
-    //-------------------------REQUEST VENDOR PAYOUT ------------------------------//
-    // 2. REQUEST PAYOUT (MANUAL)
-    static async requestPayout(restaurantId, amount, bankDetails) {
-        // 1. Validation (Strict Zod check)
-        const validData = restaurant_validator_1.payoutSchema.parse({ amount, bankDetails });
-        // 2. Check Balance
-        const { availableBalance } = await RestaurantService.getEarnings(restaurantId);
-        if (validData.amount > availableBalance) {
-            throw new Error(`Insufficient funds. Available: ₦${availableBalance.toLocaleString()}`);
-        }
-        // 3. Get Owner
-        const restaurant = await prisma.restaurant.findUnique({
-            where: { id: restaurantId },
-            select: { owner: true, ownerId: true, name: true }
-        });
-        if (!restaurant)
-            throw new Error("Restaurant Not Found");
-        // 4. Create Transaction
-        const transaction = await prisma.transaction.create({
-            data: {
-                userId: restaurant.ownerId,
-                amount: validData.amount,
-                type: "DEBIT",
-                category: "WITHDRAWAL",
-                status: "PENDING",
-                description: `Withdrawal to ${validData.bankDetails.bankName} - ${validData.bankDetails.accountNumber}`,
-                reference: `PAYOUT-${Date.now()}`
-            }
-        });
-        // 5. 🔔 Notify Admin
-        (0, mailer_1.sendAdminPayoutAlert)(restaurant.name, validData.amount, validData.bankDetails);
-        return transaction;
-    }
-    //--------------------GET VENDOR TRANSACTION -----------------------------//
-    static async getTransactions(restaurantId) {
-        //1. Find owner of the restaurant
-        const restaurant = await prisma.restaurant.findUnique({
-            where: { id: restaurantId },
-            select: { ownerId: true }
-        });
-        if (!restaurant) {
-            throw new Error("Restaurant not found");
-        }
-        //2.Fetch Transaction for this owner
-        //We order by createdAt desc so the the next money shows up
-        const transaction = await prisma.transaction.findMany({
-            where: { userId: restaurant.ownerId },
-            orderBy: { createdAt: 'desc' },
-            take: 50 //Limit to the last 50 for performance
-        });
-        return transaction;
-    }
-    // Add to RestaurantService class
-    static async addReview(userId, orderId, rating, comment) {
-        // 1. Get order to find restaurant
-        const order = await prisma.order.findUnique({
-            where: { id: orderId },
-            include: { restaurant: true }
-        });
-        if (!order)
-            throw new Error("Order not found");
-        if (order.customerId !== userId)
-            throw new Error("You can only rate your own orders");
-        if (order.status !== "DELIVERED")
-            throw new Error("Cannot rate undelivered order");
-        // 2. Create Review
-        const review = await prisma.review.create({
-            data: {
-                userId,
-                restaurantId: order.restaurantId,
-                orderId,
-                rating,
-                comment
-            }
-        });
-        // 3. Update Restaurant Average Rating
-        const restaurantId = order.restaurantId;
-        const aggregates = await prisma.review.aggregate({
-            where: { restaurantId },
-            _avg: { rating: true },
-            _count: { rating: true }
-        });
-        await prisma.restaurant.update({
-            where: { id: restaurantId },
-            data: {
-                rating: aggregates._avg.rating || 0,
-                ratingCount: aggregates._count.rating || 0
-            }
-        });
-        return review;
+        // 🧹 Fix: Instantly clear frontend slug cache so users see "Sold Out"
+        await this.clearRestaurantCache(item.restaurantId, item.restaurant.slug);
+        return updatedItem;
     }
 }
 exports.RestaurantService = RestaurantService;
+// ===== Caching Keys =====
+RestaurantService.CACHE_KEYS = {
+    ALL_RESTAURANTS: "restaurants:all",
+    RESTAURANT_BY_ID: (id) => `restaurant:${id}`,
+    RESTAURANT_BY_SLUG: (slug) => `restaurant:slug:${slug}`,
+    MENU_ITEMS: (id) => `restaurant:${id}:menu`,
+};
 //# sourceMappingURL=restaurant.service.js.map

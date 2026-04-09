@@ -26,6 +26,7 @@ export class OrderStateMachine {
     // Terminal States (Accepting States)
     DELIVERED: [],
     CANCELLED: [],
+    UNDERPAID:[]
   };
   /**
        * Validates if a transition from 'current' to 'next' is valid in the DFA.

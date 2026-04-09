@@ -5,59 +5,243 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.PaymentService = void 0;
 const axios_1 = __importDefault(require("axios"));
-const crypto_1 = require("crypto");
-const KORAPAY_SECRET_KEY = process.env.KORAPAY_SECRET_KEY;
-const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:3000";
+// Use PAYSTACK_SECRET_KEY instead of KORAPAY
+const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY;
+const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:3000"; // Use your new domain!
 class PaymentService {
-    // Initialize payment
-    static async initiatePayment(amount, name, email, reference // use Prisma-generated reference
-    ) {
-        const response = await axios_1.default.post("https://api.korapay.com/merchant/api/v1/charges/initialize", {
-            amount,
-            currency: "NGN",
-            reference,
-            customer: { name, email },
-            redirect_url: `https://choweazy.vercel.app/orders/details`, // ✅ updated
-            notification_url: "https://food-ordering-app.up.railway.app/api/payment/webhook",
-        }, {
-            headers: {
-                Authorization: `Bearer ${KORAPAY_SECRET_KEY}`,
-                "Content-Type": "application/json",
-            },
-        });
-        // Return the checkout URL for frontend redirection
-        return response.data.data.checkout_url;
-    }
-    // Verify payment status after redirect or via API call
-    static async verifyPayment(reference) {
-        const response = await axios_1.default.get(`https://api.korapay.com/merchant/api/v1/charges/${reference}`, {
-            headers: { Authorization: `Bearer ${KORAPAY_SECRET_KEY}` },
-        });
-        return response.data.data;
-    }
-    //Refund payment incase vendor rejects order
-    static async refund(paymentReference, amount) {
+    /**
+     * Initialize a payment with Paystack
+     * Paystack requires amount in KOBO (multiply Naira by 100)
+     */
+    // static async initiatePayment(
+    //   amount: number,
+    //   name: string,
+    //   email: string,
+    //   reference: string,
+    // ): Promise<string> {
+    //   try {
+    //     // 🛑 XOROPAY ALIGNMENT: 
+    //     // 1. Structure the body with a 'customer' object
+    //     // 2. Use 'redirect_url' instead of 'callback_url'
+    //     // 3. XoroPay likely uses standard Naira (not Kobo), matching your friend's 5000 example
+    //     const payload = {
+    //       customer: { 
+    //         email: email, 
+    //         name: name 
+    //       },
+    //       amount: amount, // No longer multiplying by 100 unless XoroPay specifically asks for Kobo
+    //       currency: 'NGN',
+    //       reference: reference,
+    //       redirect_url: `${FRONTEND_URL}/orders/details?reference=${reference}`,
+    //       notification_url: `${process.env.BACKEND_URL}/api/payment/webhook`,
+    //       metadata: { 
+    //         platform: "ChowEazy",
+    //         customer_name: name 
+    //       }
+    //     };
+    //     const response = await axios.post(
+    //       `${XOROPAY_BASE_URL}/initiate`,
+    //       payload,
+    //       {
+    //         headers: {
+    //           'Authorization': `Bearer ${XOROPAY_SECRET_KEY}`,
+    //           'Content-Type': 'application/json',
+    //         },
+    //       }
+    //     );
+    //     // 🛑 RESPONSE ALIGNMENT:
+    //     // XoroPay returns { status: true, checkout_url: "..." } at the root
+    //     if (response.data.status) {
+    //       return response.data.checkout_url;
+    //     } else {
+    //       throw new Error(response.data.message || "XoroPay initialization failed");
+    //     }
+    //   } catch (error: any) {
+    //     console.error(
+    //       "XoroPay Init Error:",
+    //       error.response?.data || error.message,
+    //     );
+    //     throw new Error("Payment gateway is temporarily unavailable");
+    //   }
+    // }
+    static async initiatePayment(amount, name, email, reference) {
         try {
-            // 1. Generate a unique reference for this refund action (Required)
-            const refundReference = `REF-${(0, crypto_1.randomBytes)(8).toString("hex")}`;
-            const response = await axios_1.default.post("https://api.korapay.com/merchant/api/v1/refunds/initiate", {
-                // REQUIRED FIELDS
-                payment_reference: paymentReference, // The original order reference
-                reference: refundReference, // Unique ID for this refund
-                // OPTIONAL FIELDS (Good for tracking)
-                amount: amount, // Refund specific amount (or full if undefined)
-                reason: "Order rejected by vendor", // Audit trail
-                webhook_url: "https://food-ordering-app.up.railway.app/api/payment/webhook", // Track status updates
+            const response = await axios_1.default.post("https://api.paystack.co/transaction/initialize", {
+                email,
+                // Convert Naira to Kobo (Paystack requirement)
+                amount: Math.round(amount * 100),
+                reference,
+                name,
+                // Where Paystack redirects the user AFTER payment (Frontend)
+                callback_url: `https://choweazy.vercel.app/orders/details`,
+                metadata: {
+                    custom_fields: [
+                        {
+                            display_name: name,
+                            variable_name: "customer_name",
+                            value: name,
+                        },
+                    ],
+                },
             }, {
-                headers: { Authorization: `Bearer ${KORAPAY_SECRET_KEY}` },
+                headers: {
+                    Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`,
+                    "Content-Type": "application/json",
+                },
             });
-            console.log("Refund initiated successfully:", response.data);
-            return response.data;
+            // Paystack returns the URL in data.data.authorization_url
+            return response.data.data.authorization_url;
         }
-        catch (err) {
-            console.error("Refund failed:", err.response?.data || err.message);
-            // We throw error so the Order Service knows something went wrong
-            throw new Error("Failed to process refund via Korapay");
+        catch (error) {
+            console.error("Paystack Init Error:", error.response?.data || error.message);
+            throw new Error("Payment gateway is temporarily unavailable");
+        }
+    }
+    /**
+     * Verify payment status
+     */
+    static async verifyPayment(reference) {
+        try {
+            const response = await axios_1.default.get(`https://api.paystack.co/transaction/verify/${reference}`, {
+                headers: { Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}` },
+            });
+            return response.data.data; // Contains status: 'success', 'failed', etc.
+        }
+        catch (error) {
+            console.error("Paystack Verify Error:", error.response?.data || error.message);
+            throw new Error("Could not verify payment status");
+        }
+    }
+    // /**
+    //  * Refund payment
+    //  */
+    // static async refund(paymentReference: string, amount?: number) {
+    //   try {
+    //     const payload: any = {
+    //       transaction: paymentReference, // Paystack uses the original transaction reference
+    //     };
+    //     // If amount is provided, convert to Kobo. If not, it does a full refund.
+    //     if (amount) {
+    //       payload.amount = Math.round(amount * 100);
+    //     }
+    //     const response = await axios.post(
+    //       "https://api.paystack.co/refund",
+    //       payload,
+    //       {
+    //         headers: { Authorization: `Bearer ${PAYSTACK_SECRET_KEY}` },
+    //       },
+    //     );
+    //     console.log("Refund initiated successfully:", response.data);
+    //     return response.data;
+    //   } catch (err: any) {
+    //     console.error("Refund failed:", err.response?.data || err.message);
+    //     throw new Error("Failed to process refund via Paystack");
+    //   }
+    // }
+    /**
+     * 1. Resolve Bank Account
+     * Verifies that the account number is correct for the selected bank.
+     */
+    // static async resolveAccount(accountNumber: string, bankCode: string) {
+    //   try {
+    //     const response = await axios.get(
+    //       `https://api.paystack.co/bank/resolve?account_number=${accountNumber}&bank_code=${bankCode}`,
+    //       {
+    //         headers: { Authorization: `Bearer ${PAYSTACK_SECRET_KEY}` },
+    //       },
+    //     );
+    //     return response.data.data; // Returns { account_name, account_number, bank_id }
+    //   } catch (error: any) {
+    //     console.error(
+    //       "Resolve Account Error:",
+    //       error.response?.data || error.message,
+    //     );
+    //     throw new Error("Invalid bank account details");
+    //   }
+    // }
+    // static async createTransferRecipient(
+    //   name: string,
+    //   accountNumber: string,
+    //   bankCode: string,
+    // ) {
+    //   try {
+    //     const response = await axios.post(
+    //       "https://api.paystack.co/transferrecipient",
+    //       {
+    //         type: "nuban",
+    //         name: name,
+    //         account_number: accountNumber,
+    //         bank_code: bankCode,
+    //         currency: "NGN",
+    //       },
+    //       {
+    //         headers: { Authorization: `Bearer ${PAYSTACK_SECRET_KEY}` },
+    //       },
+    //     );
+    //     return response.data.data.recipient_code; // Returns code like 'RCP_w4389...'
+    //   } catch (error: any) {
+    //     console.error(
+    //       "Create Recipient Error:",
+    //       error.response?.data || error.message,
+    //     );
+    //     throw new Error("Failed to create transfer recipient");
+    //   }
+    // }
+    // static async initiateTransfer(
+    //   amount: number,
+    //   recipientCode: string,
+    //   reference: string | null,
+    //   reason = "Payout",
+    // ) {
+    //   try {
+    //     const response = await axios.post(
+    //       "https://api.paystack.co/transfer",
+    //       {
+    //         source: "balance", // Use your Paystack Balance
+    //         amount: Math.round(amount * 100), // Convert to Kobo
+    //         recipient: recipientCode,
+    //         reason: reason,
+    //         reference: reference,
+    //       },
+    //       {
+    //         headers: { Authorization: `Bearer ${PAYSTACK_SECRET_KEY}` },
+    //       },
+    //     );
+    //     return response.data.data;
+    //   } catch (error: any) {
+    //     console.error("Transfer Error:", error.response?.data || error.message);
+    //     // Handle specific Paystack errors (like low balance)
+    //     if (error.response?.data?.code === "transfer_balance_insufficient") {
+    //       throw new Error(
+    //         "System wallet balance is too low to process this payout.",
+    //       );
+    //     }
+    //     throw new Error(error.response?.data?.message || "Payout failed");
+    //   }
+    // }
+    /**
+     * Helper: Get List of Banks (Optional, if you need to send this to frontend)
+     */
+    static async getBankList() {
+        try {
+            const response = await axios_1.default.get("https://api.paystack.co/bank?currency=NGN", {
+                headers: { Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}` },
+            });
+            return response.data.data; // Returns array of { name, code, ... }
+        }
+        catch (error) {
+            console.error("Fetch Banks Error:", error.message);
+            // Fallback to a few major banks if API fails
+            return [
+                { name: "Access Bank", code: "044" },
+                { name: "GTBank", code: "058" },
+                { name: "Zenith Bank", code: "057" },
+                { name: "UBA", code: "033" },
+                { name: "First Bank", code: "011" },
+                { name: "OPay", code: "999992" },
+                { name: "PalmPay", code: "999991" },
+                { name: "Kuda Bank", code: "50211" },
+            ];
         }
     }
 }

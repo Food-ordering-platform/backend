@@ -3,10 +3,10 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.authMiddleware = void 0;
+exports.roleMiddleware = exports.authMiddleware = void 0;
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
-const prisma_1 = require("../../generated/prisma"); // Adjust path to your generated client
-const prisma = new prisma_1.PrismaClient();
+const client_1 = require("@prisma/client"); // Adjust path to your generated client
+const prisma = new client_1.PrismaClient();
 const authMiddleware = async (req, res, next) => {
     try {
         const authHeader = req.headers.authorization;
@@ -20,13 +20,13 @@ const authMiddleware = async (req, res, next) => {
         // 2. 🛡️ SECURITY CHECK: Does this user actually exist and are they verified?
         const user = await prisma.user.findUnique({
             where: { id: userId },
-            select: { id: true, role: true, email: true, isVerified: true }
+            select: { id: true, role: true, email: true, isVerified: true, isEmailVerified: true }
         });
         if (!user) {
             return res.status(401).json({ success: false, message: "User no longer exists." });
         }
-        if (!user.isVerified) {
-            return res.status(403).json({ success: false, message: "Account not verified. Please verify OTP." });
+        if (!user.isEmailVerified) {
+            return res.status(403).json({ success: false, message: "Email not verified. Please verify OTP." });
         }
         // 3. Attach User to Request
         req.user = {
@@ -41,4 +41,25 @@ const authMiddleware = async (req, res, next) => {
     }
 };
 exports.authMiddleware = authMiddleware;
+const roleMiddleware = (allowedRoles) => {
+    return (req, res, next) => {
+        // 1. Ensure the user object exists (meaning authMiddleware ran successfully)
+        if (!req.user) {
+            return res.status(401).json({
+                success: false,
+                message: "Unauthorized. Please login first."
+            });
+        }
+        // 2. Check if the user's role is in the list of allowed roles
+        if (!allowedRoles.includes(req.user.role)) {
+            return res.status(403).json({
+                success: false,
+                message: `Access denied. Requires one of: ${allowedRoles.join(", ")}`
+            });
+        }
+        // 3. User is authorized, proceed to the controller
+        next();
+    };
+};
+exports.roleMiddleware = roleMiddleware;
 //# sourceMappingURL=auth.middleware.js.map

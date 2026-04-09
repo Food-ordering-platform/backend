@@ -19,8 +19,8 @@ export const globalLimiter = rateLimit({
 
 // 2. THE FORT KNOX (For Login, Signup, OTP)
 export const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 25, // Strictly 5 attempts!
+  windowMs: 5 * 60 * 1000, // 5 minutes
+  max: 5, // Strictly 5 attempts!
   standardHeaders: true,
   legacyHeaders: false,
   store: new RedisStore({

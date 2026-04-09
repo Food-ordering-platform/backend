@@ -369,7 +369,7 @@ export class RiderService {
     };
   }
 
-  // 4. Request Payout
+  // 4. Request 
   //Creates a withdrawal request (Debit Transaction).
   static async requestPayout(userId: string, amount: number, bankDetails: any) {
   const validData = payoutSchema.parse({ amount, bankDetails });

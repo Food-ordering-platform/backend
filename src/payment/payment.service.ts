@@ -82,7 +82,7 @@ export class PaymentService {
           reference,
           name,
           // Where Paystack redirects the user AFTER payment (Frontend)
-          callback_url: `https://choweazy.vercel.app/orders/details`,
+          callback_url: `https://choweazy.com/orders/details`,
           metadata: {
             custom_fields: [
               {

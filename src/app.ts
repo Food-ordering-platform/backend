@@ -46,7 +46,7 @@ app.use(compression())
 
 app.use(
   cors({
-    origin: ["http://localhost:3000", "https://staging.choweazy.com", "https://www.choweazy.com", "http://localhost:8081", "https://admin.staging.choweazy.com"],
+    origin: ["http://localhost:3000", "https://staging.choweazy.com", "https://www.choweazy.com", "https://choweazy.com", "http://localhost:8081", "https://admin.staging.choweazy.com"],
     methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
     preflightContinue: false,

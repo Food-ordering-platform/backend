@@ -19,7 +19,7 @@ export const calculateBPS = (amount: number, bps: number): number => {
   return Math.floor((amount * bps) / 10000);
 };
 
-/**
+/*
  * Vendor gets 85% of the FOOD REVENUE only
  */
 export const calculateVendorShare = (subtotal: number): number => {

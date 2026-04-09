@@ -119,21 +119,23 @@ export class OrderService {
 
     // 3. Calculate Distance and Delivery Fee
     let deliveryFee = 0;
+    let deliveryDistance = 0
     if (
       restaurant.latitude &&
       restaurant.longitude &&
       deliveryLatitude &&
       deliveryLongitude
     ) {
-      const distance = calculateDistance(
+      deliveryDistance = calculateDistance(
         restaurant.latitude,
         restaurant.longitude,
         deliveryLatitude,
         deliveryLongitude,
       );
-      deliveryFee = calculateDeliveryFee(distance);
+      deliveryFee = calculateDeliveryFee(deliveryDistance);
     } else {
-      deliveryFee = 500;
+      deliveryFee = 800;
+      deliveryDistance = 2
     }
 
     // 4. Validate Menu Items and Subtotal
@@ -194,8 +196,9 @@ export class OrderService {
         restaurantId,
         totalAmount: finalTotal,
         deliveryFee: deliveryFee,
-        paymentStatus: "PENDING",
-        status: "PENDING",
+        paymentStatus: PaymentStatus.PENDING,
+        status: OrderStatus.PENDING,
+        deliveryDistance:parseFloat(deliveryDistance.toFixed(2)),
         deliveryAddress,
         deliveryPhoneNumber,
         deliveryNotes: deliveryNotes || null,
@@ -217,49 +220,73 @@ export class OrderService {
 
 
   // ✅ UPDATED: Sends email with REAL DB reference
- static async processSuccessfulPayment(reference: string) {
-  return await prisma.$transaction(async (tx) => {
-    // 1️⃣ Lock the order row by using `findUnique` inside the transaction
-    const order = await tx.order.findUnique({
-      where: { reference },
-      include: {
-        restaurant: { include: { owner: true } },
-        customer: true,
-      },
-    });
-
-    if (!order) return null;
-
-    // 2️⃣ Idempotency check
-    if (order.paymentStatus === "PAID") return order;
-
-    // 3️⃣ Update order status inside transaction
-    const updatedOrder = await tx.order.update({
-      where: { id: order.id },
-      data: { paymentStatus: "PAID" },
-    });
-
-    // 4️⃣ Send notifications (outside DB update, but still part of transaction logic)
-    if (order.customer && order.customer.email) {
-      sendOrderStatusEmail(
-        order.customer.email,
-        order.customer.name,
-        order.reference,
-        "PENDING",
-      ).catch((e) => console.log("Payment success email failed", e));
-    }
-
-    if (order.restaurant?.owner?.pushToken) {
-      sendPushToVendor(
-        order.restaurant.owner.pushToken,
-        "New Order Paid! 💰",
-        `Order #${order.reference.slice(0, 4).toUpperCase()}`,
-      );
-    }
-
-    return updatedOrder;
+ // The rewritten, bulletproof processor
+static async processSuccessfulPayment(reference: string, paystackAmountInKobo: number) {
+  
+  // 1. Fetch the order details first (No lock needed yet)
+  const order = await prisma.order.findUnique({
+    where: { reference },
+    include: {
+      restaurant: { include: { owner: true } },
+      customer: true,
+    },
   });
+
+  if (!order) return null;
+
+  // 2. THE UNDERPAYMENT CHECK
+  // Paystack sends kobo, so divide by 100.
+  const amountPaidInNaira = paystackAmountInKobo / 100;
+  if (amountPaidInNaira < order.totalAmount) {
+    console.error(`Underpayment on ${reference}! Paid: ${amountPaidInNaira}, Expected: ${order.totalAmount}`);
+    // Update to FAILED_UNDERPAID safely
+    await prisma.order.update({
+       where: { id: order.id },
+       data: { status: OrderStatus.UNDERPAID }
+    });
+    return null; 
+  }
+
+  // 3. THE OPTIMISTIC LOCK (The Ultimate Idempotency Check)
+  // Instead of checking the status in Node.js, we force Postgres to check it.
+  const updatedOrderResult = await prisma.order.updateMany({
+    where: { 
+      id: order.id,
+      paymentStatus: "PENDING" // <--- CRITICAL: Fails instantly if already PAID
+    },
+    data: { paymentStatus: "PAID" },
+  });
+
+  // If count is 0, it means Webhook B arrived late and the status was already PAID.
+  // We silently drop Webhook B. Idempotency successful!
+  if (updatedOrderResult.count === 0) {
+    console.log(`Duplicate webhook ignored. Order ${reference} is already processed.`);
+    return order;
+  }
+
+  // 4. NOTIFICATIONS (100% Safe)
+  // We only reach this line if count === 1 (meaning THIS specific webhook won the race)
+  if (order.customer && order.customer.email) {
+    sendOrderStatusEmail(
+      order.customer.email,
+      order.customer.name,
+      order.reference,
+      "PAID" // Changed from PENDING to PAID
+    ).catch((e) => console.log("Payment success email failed", e));
+  }
+
+  if (order.restaurant?.owner?.pushToken) {
+    sendPushToVendor(
+      order.restaurant.owner.pushToken,
+      "New Order Paid! 💰",
+      `Order #${order.reference.slice(0, 4).toUpperCase()}`
+    ).catch((e) => console.log("Push failed", e)); // Always catch floating promises!
+  }
+
+  return order;
 }
+
+
 
   static async getOrdersByCustomer(customerId: string) {
     return prisma.order.findMany({

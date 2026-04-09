@@ -214,8 +214,8 @@ export class VendorService {
   /**
    * 2. Get Vendor Earnings
    */
-  static async getVendorEarnings(userId: string) {
-    const transactions = await prisma.transaction.findMany({
+  static async getVendorEarnings(userId: string, db: PrismaClient | any = prisma) {
+    const transactions = await db.transaction.findMany({
       where: { userId },
       orderBy: { createdAt: "desc" },
     });
@@ -270,65 +270,91 @@ export class VendorService {
  * 4. Request Payout (Manual Workflow)
  */
 static async requestPayout(userId: string, amount: number, bankDetails: any) {
-  // 1. Validate input and check balance
   const validData = payoutSchema.parse({ amount, bankDetails });
-  const { availableBalance } = await this.getVendorEarnings(userId);
 
-  if (validData.amount < 1000) throw new Error("Minimum withdrawal is ₦1000");
-  if (validData.amount > availableBalance) {
-    throw new Error(`Insufficient funds. Available: ₦${availableBalance.toLocaleString()}`);
+  if (validData.amount < 1000) {
+    throw new Error("Minimum withdrawal is ₦1000");
   }
 
-  // 2. Fetch Restaurant name for the Admin Alert
-  const restaurant = await prisma.restaurant.findUnique({
-    where: { ownerId: userId },
-    include:{
-      owner:{
-        select:{
-          name: true,
-          email:true,
-        }
-      }
-    }
-  });
-
-if (!restaurant || !restaurant.owner) throw new Error("Restaurant or Owner Not Found");
-
-
-  // 3. Execute DB Transaction
   return await prisma.$transaction(async (tx) => {
-    // Create the DEBIT record in the Ledger
+    // 🔒 1. Lock the USER row (vendor payouts)
+    await tx.$queryRaw`
+      SELECT id FROM "User"
+      WHERE id = ${userId}
+      FOR UPDATE
+    `;
+
+    // 🔒 2. Recalculate balance INSIDE transaction (VERY IMPORTANT)
+    const { availableBalance } = await this.getVendorEarnings(userId, tx);
+
+    if (validData.amount > availableBalance) {
+      throw new Error(
+        `Insufficient funds. Available: ₦${availableBalance.toLocaleString()}`
+      );
+    }
+
+    // 🔒 3. Fetch restaurant + owner INSIDE transaction
+    const restaurant = await tx.restaurant.findUnique({
+      where: { ownerId: userId },
+      include: {
+        owner: {
+          select: {
+            name: true,
+            email: true,
+          },
+        },
+      },
+    });
+
+    if (!restaurant || !restaurant.owner) {
+      throw new Error("Restaurant or Owner Not Found");
+    }
+
+    // 🔒 4. Create DEBIT (this reserves funds)
     const transaction = await tx.transaction.create({
       data: {
         userId,
         amount: validData.amount,
         type: TransactionType.DEBIT,
         category: TransactionCategory.WITHDRAWAL,
-        status: TransactionStatus.PENDING, // It stays PENDING until Admin approves
+        status: TransactionStatus.PENDING,
         description: `Manual Payout Request to ${validData.bankDetails.bankName} (${validData.bankDetails.accountNumber})`,
         reference: `MAN-PAY-${Date.now()}`,
       },
     });
 
-    // 4. Trigger Notifications (Asynchronous vibes)
+    return {
+      transaction,
+      restaurantName: restaurant.name,
+      ownerName: restaurant.owner.name,
+      ownerEmail: restaurant.owner.email,
+    };
+  }).then(async ({ transaction, restaurantName, ownerName, ownerEmail }) => {
+    // 🚀 Notifications OUTSIDE transaction (non-blocking)
+
     try {
-      // Alert the Admin to perform the manual bank transfer
-      await sendAdminPayoutAlert(restaurant.name, validData.amount, validData.bankDetails);
-      
-      // Notify the Vendor that their request is being processed
-      await sendPayoutRequestEmail({
-        email: restaurant.owner.email,
-        ownerName: restaurant.owner.name,
-        restaurantName: restaurant.name,
-        amount: validData.amount,
-        bankName: validData.bankDetails.bankName,
-        accountNumber: validData.bankDetails.accountNumber
-      });
-      
-      console.log(`Payout request logged for ${restaurant.name}. Reference: ${transaction.reference}`);
+      await sendAdminPayoutAlert(
+        restaurantName,
+        validData.amount,
+        bankDetails
+      );
+
+      if (ownerEmail) {
+        await sendPayoutRequestEmail({
+          email: ownerEmail,
+          ownerName: ownerName,
+          restaurantName: restaurantName,
+          amount: validData.amount,
+          bankName: bankDetails.bankName,
+          accountNumber: bankDetails.accountNumber,
+        });
+      }
+
+      console.log(
+        `Payout request logged for ${restaurantName}. Reference: ${transaction.reference}`
+      );
     } catch (e: any) {
-  
-      console.error("Notification failed but transaction was recorded:", e.message);
+      console.error("Notification failed but transaction recorded:", e.message);
     }
 
     return transaction;

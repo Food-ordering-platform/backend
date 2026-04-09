@@ -11,6 +11,8 @@ export class OrderStateMachine {
     //Initial State
     PENDING: ["PREPARING", "CANCELLED"],
 
+    UNDERPAID: ["CANCELLED", "PENDING"],
+
     //Kitchen is working
     PREPARING: ["READY_FOR_PICKUP"],
 
@@ -26,6 +28,7 @@ export class OrderStateMachine {
     // Terminal States (Accepting States)
     DELIVERED: [],
     CANCELLED: [],
+    
   };
   /**
        * Validates if a transition from 'current' to 'next' is valid in the DFA.

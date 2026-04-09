@@ -2,11 +2,7 @@ import axios from "axios";
 import { randomBytes } from "crypto";
 
 // Use PAYSTACK_SECRET_KEY instead of KORAPAY
-// const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY as string;
-// const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:3000";
-
-const XOROPAY_SECRET_KEY = process.env.XOROPAY_SECRET_KEY;
-const XOROPAY_BASE_URL = "https://api.xoropay.com/api/v1";
+const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY as string;
 const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:3000"; // Use your new domain!
 
 export class PaymentService {
@@ -14,62 +10,6 @@ export class PaymentService {
    * Initialize a payment with Paystack
    * Paystack requires amount in KOBO (multiply Naira by 100)
    */
-  static async initiatePayment(
-    amount: number,
-    name: string,
-    email: string,
-    reference: string,
-  ): Promise<string> {
-    try {
-      // 🛑 XOROPAY ALIGNMENT: 
-      // 1. Structure the body with a 'customer' object
-      // 2. Use 'redirect_url' instead of 'callback_url'
-      // 3. XoroPay likely uses standard Naira (not Kobo), matching your friend's 5000 example
-      const payload = {
-        customer: { 
-          email: email, 
-          name: name 
-        },
-        amount: amount, // No longer multiplying by 100 unless XoroPay specifically asks for Kobo
-        currency: 'NGN',
-        reference: reference,
-        redirect_url: `${FRONTEND_URL}/orders/details?reference=${reference}`,
-        notification_url: `${process.env.BACKEND_URL}/api/payment/webhook`,
-        metadata: { 
-          platform: "ChowEazy",
-          customer_name: name 
-        }
-      };
-
-      const response = await axios.post(
-        `${XOROPAY_BASE_URL}/initiate`,
-        payload,
-        {
-          headers: {
-            'Authorization': `Bearer ${XOROPAY_SECRET_KEY}`,
-            'Content-Type': 'application/json',
-          },
-        }
-      );
-
-      // 🛑 RESPONSE ALIGNMENT:
-      // XoroPay returns { status: true, checkout_url: "..." } at the root
-      if (response.data.status) {
-        return response.data.checkout_url;
-      } else {
-        throw new Error(response.data.message || "XoroPay initialization failed");
-      }
-
-    } catch (error: any) {
-      console.error(
-        "XoroPay Init Error:",
-        error.response?.data || error.message,
-      );
-      throw new Error("Payment gateway is temporarily unavailable");
-    }
-  }
-
-
   // static async initiatePayment(
   //   amount: number,
   //   name: string,
@@ -77,66 +17,122 @@ export class PaymentService {
   //   reference: string,
   // ): Promise<string> {
   //   try {
-  //     const response = await axios.post(
-  //       "https://api.paystack.co/transaction/initialize",
-  //       {
-  //         email,
-  //         // Convert Naira to Kobo (Paystack requirement)
-  //         amount: Math.round(amount * 100),
-  //         reference,
-  //         name,
-  //         // Where Paystack redirects the user AFTER payment (Frontend)
-  //         callback_url: `https://choweazy.vercel.app/orders/details`,
-  //         metadata: {
-  //           custom_fields: [
-  //             {
-  //               display_name: name,
-  //               variable_name: "customer_name",
-  //               value: name,
-  //             },
-  //           ],
-  //         },
+  //     // 🛑 XOROPAY ALIGNMENT: 
+  //     // 1. Structure the body with a 'customer' object
+  //     // 2. Use 'redirect_url' instead of 'callback_url'
+  //     // 3. XoroPay likely uses standard Naira (not Kobo), matching your friend's 5000 example
+  //     const payload = {
+  //       customer: { 
+  //         email: email, 
+  //         name: name 
   //       },
+  //       amount: amount, // No longer multiplying by 100 unless XoroPay specifically asks for Kobo
+  //       currency: 'NGN',
+  //       reference: reference,
+  //       redirect_url: `${FRONTEND_URL}/orders/details?reference=${reference}`,
+  //       notification_url: `${process.env.BACKEND_URL}/api/payment/webhook`,
+  //       metadata: { 
+  //         platform: "ChowEazy",
+  //         customer_name: name 
+  //       }
+  //     };
+
+  //     const response = await axios.post(
+  //       `${XOROPAY_BASE_URL}/initiate`,
+  //       payload,
   //       {
   //         headers: {
-  //           Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`,
-  //           "Content-Type": "application/json",
+  //           'Authorization': `Bearer ${XOROPAY_SECRET_KEY}`,
+  //           'Content-Type': 'application/json',
   //         },
-  //       },
+  //       }
   //     );
 
-  //     // Paystack returns the URL in data.data.authorization_url
-  //     return response.data.data.authorization_url;
+  //     // 🛑 RESPONSE ALIGNMENT:
+  //     // XoroPay returns { status: true, checkout_url: "..." } at the root
+  //     if (response.data.status) {
+  //       return response.data.checkout_url;
+  //     } else {
+  //       throw new Error(response.data.message || "XoroPay initialization failed");
+  //     }
+
   //   } catch (error: any) {
   //     console.error(
-  //       "Paystack Init Error:",
+  //       "XoroPay Init Error:",
   //       error.response?.data || error.message,
   //     );
   //     throw new Error("Payment gateway is temporarily unavailable");
   //   }
   // }
 
+
+  static async initiatePayment(
+    amount: number,
+    name: string,
+    email: string,
+    reference: string,
+  ): Promise<string> {
+    try {
+      const response = await axios.post(
+        "https://api.paystack.co/transaction/initialize",
+        {
+          email,
+          // Convert Naira to Kobo (Paystack requirement)
+          amount: Math.round(amount * 100),
+          reference,
+          name,
+          // Where Paystack redirects the user AFTER payment (Frontend)
+          callback_url: `https://choweazy.vercel.app/orders/details`,
+          metadata: {
+            custom_fields: [
+              {
+                display_name: name,
+                variable_name: "customer_name",
+                value: name,
+              },
+            ],
+          },
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`,
+            "Content-Type": "application/json",
+          },
+        },
+      );
+
+      // Paystack returns the URL in data.data.authorization_url
+      return response.data.data.authorization_url;
+    } catch (error: any) {
+      console.error(
+        "Paystack Init Error:",
+        error.response?.data || error.message,
+      );
+      throw new Error("Payment gateway is temporarily unavailable");
+    }
+  }
+
   /**
    * Verify payment status
    */
-  // static async verifyPayment(reference: string) {
-  //   try {
-  //     const response = await axios.get(
-  //       `https://api.paystack.co/transaction/verify/${reference}`,
-  //       {
-  //         headers: { Authorization: `Bearer ${PAYSTACK_SECRET_KEY}` },
-  //       },
-  //     );
+  static async verifyPayment(reference: string) {
+    try {
+      const response = await axios.get(
+        `https://api.paystack.co/transaction/verify/${reference}`,
+        {
+          headers: { Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}` },
+        },
+      );
 
-  //     return response.data.data; // Contains status: 'success', 'failed', etc.
-  //   } catch (error: any) {
-  //     console.error(
-  //       "Paystack Verify Error:",
-  //       error.response?.data || error.message,
-  //     );
-  //     throw new Error("Could not verify payment status");
-  //   }
-  // }
+      return response.data.data; // Contains status: 'success', 'failed', etc.
+    } catch (error: any) {
+      console.error(
+        "Paystack Verify Error:",
+        error.response?.data || error.message,
+      );
+      throw new Error("Could not verify payment status");
+    }
+  }
 
   // /**
   //  * Refund payment

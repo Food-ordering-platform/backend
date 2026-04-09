@@ -18,6 +18,7 @@ export class AuthController {
         data.role,
         new Date(),
         data.address,
+        data.inviteCode
       );
 
       return res.status(201).json({

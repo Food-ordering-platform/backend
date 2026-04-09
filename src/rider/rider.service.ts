@@ -29,14 +29,14 @@ export class RiderService {
   }
 
   //1. Fetch available orders (ONLY if rider is free)
-static async getAvailableOrders(riderId: string) {
+  static async getAvailableOrders(riderId: string) {
     const rider = await prisma.user.findUnique({
       where: { id: riderId },
       select: { isOnline: true },
     });
 
     if (!rider || !rider.isOnline) {
-      return []; 
+      return [];
     }
 
     const activeOrder = await prisma.order.findFirst({
@@ -49,13 +49,13 @@ static async getAvailableOrders(riderId: string) {
     });
 
     if (activeOrder) {
-      return []; 
+      return [];
     }
 
     const orders = await prisma.order.findMany({
       where: {
         status: OrderStatus.READY_FOR_PICKUP,
-        riderId: null, 
+        riderId: null,
       },
       select: {
         id: true,
@@ -92,14 +92,13 @@ static async getAvailableOrders(riderId: string) {
     });
 
     // 🟢 Map to only show the 90% share
-    return orders.map(order => ({
+    return orders.map((order) => ({
       ...order,
-      deliveryFee: calculateRiderShare(order.deliveryFee)
+      deliveryFee: calculateRiderShare(order.deliveryFee),
     }));
   }
 
-
- static async getActiveOrder(riderId: string) {
+  static async getActiveOrder(riderId: string) {
     const order = await prisma.order.findFirst({
       where: {
         riderId: riderId,
@@ -136,7 +135,7 @@ static async getAvailableOrders(riderId: string) {
     // 🟢 Return the order with the calculated 90% share
     return {
       ...order,
-      deliveryFee: calculateRiderShare(order.deliveryFee)
+      deliveryFee: calculateRiderShare(order.deliveryFee),
     };
   }
 
@@ -175,6 +174,7 @@ static async getAvailableOrders(riderId: string) {
 
       // (The Race Condition Fix): Atomic Update
       // instead of "finding" then "updating", we try to update ONLY IF riderId is null.
+      
       let updatedOrder;
       try {
         updatedOrder = await tx.order.update({
@@ -320,8 +320,8 @@ static async getAvailableOrders(riderId: string) {
 
   // Get Earnings & Wallet Balance
   //Calculates pending balance and returns transaction history.
-  static async getRiderEarnings(riderId: string) {
-    const transactions = await prisma.transaction.findMany({
+  static async getRiderEarnings(riderId: string, db: PrismaClient | any = prisma ) {
+    const transactions = await db.transaction.findMany({
       where: { userId: riderId },
       orderBy: { createdAt: "desc" },
     });
@@ -369,98 +369,103 @@ static async getAvailableOrders(riderId: string) {
     };
   }
 
-  // 4. Request Payout
+  // 4. Request 
   //Creates a withdrawal request (Debit Transaction).
-
   static async requestPayout(userId: string, amount: number, bankDetails: any) {
-    // 1. Validate input (Assuming you use the same schema as vendor or similar)
-    const validData = payoutSchema.parse({ amount, bankDetails });
-    // 2. Fetch current earnings to check available balance
-    const { availableBalance } = await this.getRiderEarnings(userId);
+  const validData = payoutSchema.parse({ amount, bankDetails });
 
-    if (validData.amount < 1000)
-      throw new Error("Minimum withdrawal is ₦1,000");
+  if (validData.amount < 1000) {
+    throw new Error("Minimum withdrawal is ₦1,000");
+  }
+
+  return await prisma.$transaction(async (tx) => {
+    // 🔒 1. Lock the USER row (acts as financial lock)
+    await tx.$queryRaw`
+      SELECT id FROM "User"
+      WHERE id = ${userId}
+      FOR UPDATE
+    `;
+
+    // 🔒 2. Recalculate balance INSIDE the lock
+    const { availableBalance } = await this.getRiderEarnings(userId, tx);
+
     if (validData.amount > availableBalance) {
       throw new Error(
-        `Insufficient funds. Available: ₦${availableBalance.toLocaleString()}`,
+        `Insufficient funds. Available: ₦${availableBalance.toLocaleString()}`
       );
     }
 
-    // 3. Fetch Rider details for notifications
-    const rider = await prisma.user.findUnique({
+    // 🔒 3. Fetch rider (inside transaction for consistency)
+    const rider = await tx.user.findUnique({
       where: { id: userId },
       select: { name: true, email: true },
     });
 
     if (!rider) throw new Error("Rider not found");
 
-    // 4. Atomic Transaction: Create the Ledger Entry
-    return await prisma.$transaction(async (tx) => {
-      const transaction = await tx.transaction.create({
-        data: {
-          userId,
-          amount: validData.amount,
-          type: TransactionType.DEBIT,
-          category: TransactionCategory.WITHDRAWAL,
-          status: TransactionStatus.PENDING, // Funds are "locked"
-          description: `Manual Payout Request to ${validData.bankDetails.bankName} (${validData.bankDetails.accountNumber})`,
-          reference: `RID-PAY-${Date.now()}`,
-        },
-      });
-
-      // 5. Trigger Notifications (Non-blocking)
-      try {
-        // Alert Admin: "
-        await sendAdminPayoutAlert(
-          rider.name,
-          validData.amount,
-          validData.bankDetails,
-        );
-
-        // Notify Rider: "We've received your request"
-        if (rider.email) {
-          await sendPayoutRequestEmail({
-            email: rider.email,
-            ownerName: rider.name,
-            restaurantName: "Rider Wallet", // Adjusting template usage
-            amount: validData.amount,
-            bankName: validData.bankDetails.bankName,
-            accountNumber: validData.bankDetails.accountNumber,
-          });
-        }
-      } catch (e: any) {
-        console.error(
-          "Notification failed, but transaction recorded:",
-          e.message,
-        );
-      }
-
-      return transaction;
+    // 🔒 4. Create the DEBIT transaction (this is your "lock" on funds)
+    const transaction = await tx.transaction.create({
+      data: {
+        userId,
+        amount: validData.amount,
+        type: TransactionType.DEBIT,
+        category: TransactionCategory.WITHDRAWAL,
+        status: TransactionStatus.PENDING, // funds reserved
+        description: `Manual Payout Request to ${validData.bankDetails.bankName} (${validData.bankDetails.accountNumber})`,
+        reference: `RID-PAY-${Date.now()}`,
+      },
     });
-  }
 
- static async getDeliveryHistory(riderId: string) {
+    return { transaction, rider };
+  }).then(async ({ transaction, rider }) => {
+    // 🚀 Notifications OUTSIDE transaction
+    try {
+      await sendAdminPayoutAlert(
+        rider.name,
+        validData.amount,
+        validData.bankDetails
+      );
+
+      if (rider.email) {
+        await sendPayoutRequestEmail({
+          email: rider.email,
+          ownerName: rider.name,
+          restaurantName: "Rider Wallet",
+          amount: validData.amount,
+          bankName: validData.bankDetails.bankName,
+          accountNumber: validData.bankDetails.accountNumber,
+        });
+      }
+    } catch (e: any) {
+      console.error("Notification failed:", e.message);
+    }
+
+    return transaction;
+  });
+}
+
+
+  static async getDeliveryHistory(riderId: string) {
     const orders = await prisma.order.findMany({
       where: {
         riderId: riderId,
-        status: { in: [OrderStatus.DELIVERED, OrderStatus.CANCELLED] }, 
+        status: { in: [OrderStatus.DELIVERED, OrderStatus.CANCELLED] },
       },
       include: {
         restaurant: { select: { name: true, imageUrl: true, address: true } },
         customer: { select: { name: true } },
-        items: { select: { quantity: true, menuItemName: true } }, 
+        items: { select: { quantity: true, menuItemName: true } },
       },
       orderBy: { updatedAt: "desc" },
     });
 
     // 🟢 Map the history to show only the 90% share earned per order
-    return orders.map(order => ({
+    return orders.map((order) => ({
       ...order,
-      deliveryFee: calculateRiderShare(order.deliveryFee)
+      deliveryFee: calculateRiderShare(order.deliveryFee),
     }));
   }
 
-  
   static async updateRiderStatus(userId: string, isOnline: boolean) {
     // 1. Update the user
     const updatedUser = await prisma.user.update({
@@ -480,7 +485,12 @@ static async getAvailableOrders(riderId: string) {
   //Get rider transaction
   static async getTransactions(userId: string) {
     return await prisma.transaction.findMany({
-      where: { userId },
+      where: {
+        userId,
+        NOT: {
+          reference: { startsWith: "FLT-PAY" },
+        },
+      },
       orderBy: { createdAt: "desc" },
       take: 50,
     });

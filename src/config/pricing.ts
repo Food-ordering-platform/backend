@@ -7,8 +7,8 @@ export const PRICING = {
 
   // --- Delivery Fee Configuration ---
   DELIVERY_BASE_DISTANCE_KM: 2,
-  DELIVERY_BASE_FEE: 700,
-  DELIVERY_PER_KM_RATE: 150,
+  DELIVERY_BASE_FEE: 800,
+  DELIVERY_PER_KM_RATE: 200,
 };
 
 /**

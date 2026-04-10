@@ -1,22 +1,16 @@
 import {
   OrderStatus,
   PrismaClient,
-  TransactionCategory,
-  TransactionStatus,
-  TransactionType,
   PaymentStatus
 } from "@prisma/client";
 import { PaymentService } from "../payment/payment.service";
 import { randomBytes } from "crypto";
 import {
-  sendDeliveryCode,
   sendOrderStatusEmail,
 } from "../utils/email/email.service";
-import { sendPushNotification } from "../utils/notification";
 import { calculateDistance, calculateDeliveryFee } from "../utils/haversine";
-import { PRICING, calculateVendorShare } from "../config/pricing";
-import { OrderStateMachine } from "../utils/order-state-machine";
-import { sendPushToRiders, sendPushToVendor } from "../utils/push-notification";
+import { PRICING } from "../config/pricing";
+import {  sendPushToVendor } from "../utils/push-notification";
 
 const prisma = new PrismaClient();
 

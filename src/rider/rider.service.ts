@@ -9,7 +9,7 @@ import {
 import { OrderStateMachine } from "../utils/order-state-machine";
 import { PaymentService } from "../payment/payment.service";
 import { sendPushToRiders } from "../utils/push-notification";
-import { calculateRiderShare, calculateVendorShare } from "../config/pricing";
+import { calculateRiderShare } from "../config/pricing";
 import {
   sendAdminPayoutAlert,
   sendOrderStatusEmail,

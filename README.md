@@ -11,14 +11,10 @@ This system acts as the central engine coordinating a three-way marketplace betw
 
 This system was designed with real-world backend challenges in mind, particularly around concurrency, failure handling, and transactional integrity.
 
-**Idempotent Payment Handling**
-Payment and webhook flows are designed to be idempotent, ensuring that repeated or duplicate requests (e.g., retries from payment providers) do not result in double processing or inconsistent state.
-**Concurrency & Race Condition Handling**
-Critical operations (such as multiple riders accepting an order) are structured to safely handle concurrent requests, preventing conflicting state changes.
-**Pessimistic Locking**
-Applied at the database level to maintain consistency during concurrent updates such as riders or vendors requesting payouts to avoid double withdrawal and inconsitent data.
-**Transaction Integrity (Ledger-Based Design)**
-A centralized transaction ledger ensures all financial operations are traceable, auditable, and consistent across the system.
+- **Idempotent Payment Handling:** Payment and webhook flows are designed to be idempotent, ensuring that repeated or duplicate requests (e.g., retries from payment providers) do not result in double processing or inconsistent state.
+- **Concurrency & Race Condition Handling:** Critical operations (such as multiple riders accepting an order) are structured to safely handle concurrent requests, preventing conflicting state changes.
+- **Pessimistic Locking:** Applied at the database level to maintain consistency during concurrent updates such as riders or vendors requesting payouts to avoid double withdrawal and inconsitent data.
+- **Transaction Integrity (Ledger-Based Design):** A centralized transaction ledger ensures all financial operations are traceable, auditable, and consistent across the system.
 
 
 ### 🔐 Authentication & Authorization

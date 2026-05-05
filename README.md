@@ -245,6 +245,9 @@ npm start
 
 ---
 
+## Quick Visual walk-through of the Application
+- https://youtu.be/your-video-link
+
 <div align="center">
   Built with ❤️ for the <strong>ChowEazy</strong> Ecosystem
 </div>
